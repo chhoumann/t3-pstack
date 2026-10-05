@@ -337,8 +337,8 @@
   ],
   "denylist": [
     {
-      "token": "grok-",
-      "hint": "Cursor model slug; point at the Models section, or add a substitution rule for the phrase"
+      "regex": "(?<!/)grok-",
+      "hint": "Cursor model slug; point at the Models section, or add a substitution rule for the phrase (a T3 target such as grok/grok-4.7 is allowed)"
     },
     {
       "regex": "\\b(?:claude|gpt|gemini|composer)-[0-9a-z.-]*-(?:max|fast|xhigh|high|medium|low|thinking)\\b",

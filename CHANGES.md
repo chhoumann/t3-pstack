@@ -2,6 +2,16 @@
 
 This file is the release changelog, with one `## <version> - <title>` entry per release, newest first. The Cursor-to-Claude rewrite rules live in [`tools/substitutions.json`](tools/substitutions.json), and the [sync boundary](CONTRIBUTING.md#the-sync-boundary) in `CONTRIBUTING.md` defines how a change to upstream's skill content is declared.
 
+## 1.0.0 - t3-pstack: dispatch through T3 Code
+
+t3-pstack is pstack-claude 0.9.69 with every subagent, panel, fan-out, schedule, and PR watch routed through the `t3-code` MCP tools, so one panel can run Claude, GPT, and Grok children. It targets T3 only; outside T3, use pstack-claude. Its version line is independent of pstack-claude's, and each upstream merge adds an entry here naming the merged version.
+
+- `skills/poteto-mode/references/t3-tools.md` maps dispatch, models, schedules, pull requests, transcripts, and UI evidence (`preview_*`, `device_*`) onto T3 tools. A T3 row in `tools/runtimes.mjs` stamps a pointer to it under the heading of each skill its Per-skill notes table lists, replacing the Codex pointer there, and renders its default sheet from a new `t3` block in `models.json`.
+- The override sheet names T3 targets: `<providerInstanceId>/<modelId>` plus the provider's own `<optionId>=<value>` pairs. `skills/setup-pstack/scripts/t3-sheet.mjs` checks a sheet against a saved `orchestrator_capabilities` catalog, and panels must span at least two model families.
+- The checker rejects a malformed or duplicated role line, a list on a single-model role, a `default effort` line, a bad `session hook` value, and a single-family panel, counting `inherit-parent` as the parent's family. The generator runs the same grammar over the `t3` block.
+- The plugin is `t3-pstack@t3-pstack` (marketplace repo `chhoumann/t3-pstack`), and its model sheet is `t3-pstack-models.md`, so it never collides with pstack-claude's `pstack@pstack-claude` and `pstack-models.md`. Skill text keeps upstream's `pstack:<name>` spelling; `t3-tools.md` reads it as `t3-pstack:<name>`.
+- The sync denylist's `grok-` token became `(?<!/)grok-`, so a T3 target such as `grok/grok-4.7` passes while a bare Cursor slug still fails.
+
 ## 0.9.69 - hook validation names a missing command
 
 `tools/generate.mjs` reports a hook with no `command` as a fault. Since the `commandWindows` override landed in 0.9.66, such a hook passed validation with nothing checked, including one that carried only a Windows override and so ran nowhere else.

@@ -5,6 +5,8 @@ description: poteto's agent style for concise, detailed responses, deliberate su
 
 # Poteto mode
 
+On T3, read the [platform mapping](../poteto-mode/references/t3-tools.md), including its per-skill notes, before following this skill.
+
 ## Platform Adaptation
 
 These skills use Claude Code tool names (the `Skill` tool, the `Agent` tool, `AskUserQuestion`) and the Claude model names the `Agent` tool accepts, as each Models section lists them. On Claude Code they work as written. On Codex, read [`references/codex-tools.md`](references/codex-tools.md) for the Codex equivalent of a Claude tool, model, or skill named by these workflows. On Pi, read [`references/pi-tools.md`](references/pi-tools.md) instead. Other runtimes can discover the same Agent Skills tree, but they must use their own tool, model, and configuration equivalents. Neither mapping is a cross-runtime map.

@@ -1,6 +1,30 @@
-# pstack
+# t3-pstack
 
-Lauren Tan's [pstack](https://github.com/cursor/plugins/tree/main/pstack) is an opinionated Cursor skill stack that improves agent outcomes. This is a port for Claude Code, Codex, Pi and other agent harnesses. It tracks upstream and also carries named policy forks, each declared in [`tools/forks.json`](tools/forks.json).
+pstack for [T3 Code](https://github.com/pingdotgg/t3code). It is [pstack-claude](https://github.com/michael-denyer/pstack-claude), Michael Denyer's Claude Code and Codex port of Lauren Tan's (poteto's) [pstack](https://github.com/cursor/plugins/tree/main/pstack), with one change: every subagent, panel, fan-out, schedule, and PR watch dispatches through T3's `t3-code` MCP tools. An `interrogate`, `arena`, or `architect` panel can then run Claude, GPT, and Grok reviewers side by side, from a Claude Code thread or a Codex thread. The mapping lives in [`t3-tools.md`](plugins/pstack/skills/poteto-mode/references/t3-tools.md).
+
+t3-pstack works only inside T3. Outside T3, use pstack-claude.
+
+## Install
+
+| | Claude Code | Codex |
+| --- | --- | --- |
+| Plugin id | `t3-pstack@t3-pstack` | `t3-pstack@t3-pstack` |
+| Marketplace repo | `chhoumann/t3-pstack` | `chhoumann/t3-pstack` |
+
+```shell
+claude plugin marketplace add chhoumann/t3-pstack && claude plugin install t3-pstack@t3-pstack
+codex plugin marketplace add chhoumann/t3-pstack && codex plugin add t3-pstack@t3-pstack
+```
+
+Then run `/t3-pstack:setup-pstack` in a T3 thread on each machine. It writes `t3-pstack-models.md` in the host's config directory, with one T3 target per role (`<providerInstanceId>/<modelId>` plus that provider's options), and checks it against the machine's `orchestrator_capabilities`.
+
+t3-pstack and pstack-claude never collide. They differ in plugin name (`t3-pstack` and `pstack`), marketplace (`t3-pstack` and `pstack-claude`), skill and agent namespace, and model sheet (`t3-pstack-models.md` and `pstack-models.md`). Both can be installed at once, though each injects its own routing instruction at session start, so enable one per runtime.
+
+## Staying current
+
+`upstream` is pstack-claude. Merge it with `git merge upstream/main`, then run `bun tools/generate.mjs` and `bun test tests/`. The overlay is mostly new files. The design and the list of upstream files it edits are in [`docs/t3-pstack-design.md`](docs/t3-pstack-design.md).
+
+The sections below are pstack-claude's documentation, kept as upstream writes it. Their install commands install pstack-claude, not t3-pstack.
 
 Tell `poteto-mode` your goal and it will invoke the correct workflow for the task. It keeps your code concise, simple and verified.
 
@@ -69,4 +93,10 @@ Thanks for helping make this port better. Bug reports, documentation fixes, and 
 
 ## License
 
-This port, including its modifications and additions, is also [MIT-licensed](LICENSE), © 2026 Michael Denyer. Original pstack © 2026 Lauren Tan; imported cursor-team-kit skills © 2026 Cursor. See [LICENSE-cursor-team-kit](LICENSE-cursor-team-kit) and [NOTICE.md](NOTICE.md).
+t3-pstack is [MIT-licensed](LICENSE). Its T3 modifications and additions are © 2026 Christian Bager Bach Houmann. It builds on:
+
+- [pstack-claude](https://github.com/michael-denyer/pstack-claude), MIT, © 2026 Michael Denyer, the Claude Code, Codex, and Pi port this fork tracks.
+- [pstack](https://github.com/cursor/plugins/tree/main/pstack) in cursor/plugins, MIT, © 2026 Lauren Tan (poteto), the original skill stack.
+- The skills imported from [cursor-team-kit](https://github.com/cursor/plugins/tree/main/cursor-team-kit), MIT, © 2026 Cursor. See [LICENSE-cursor-team-kit](LICENSE-cursor-team-kit).
+
+[NOTICE.md](NOTICE.md) lists each upstream component with its source commit and license file.

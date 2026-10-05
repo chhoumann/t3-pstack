@@ -68,7 +68,7 @@ const PROMPT_RUNTIMES = RUNTIMES.filter((runtime) => runtime.prompts);
 const VERSIONED_MANIFESTS = [
   ".claude-plugin/marketplace.json",
   `${PLUGIN}/.claude-plugin/plugin.json`,
-  ...RUNTIMES.map((runtime) => runtime.manifest),
+  ...RUNTIMES.flatMap((runtime) => runtime.manifest ?? []),
 ];
 
 export const PORTABLE_ASSETS = [
@@ -404,13 +404,14 @@ export function loadLeadLines(root = repo) {
 }
 
 // Put `line` in its own paragraph right under the first heading after the
-// frontmatter, replacing it if already there. Null when there is no heading.
+// frontmatter, replacing it or another runtime's lead line if already there.
+// Null when there is no heading.
 export function stampLeadLine(text, line) {
   const lines = text.split("\n");
   const bodyStart = lines[0] === "---" ? lines.indexOf("---", 1) + 1 : 0;
   const heading = lines.findIndex((l, i) => i >= bodyStart && /^#{1,6} /.test(l));
   if (heading === -1) return null;
-  const present = lines[heading + 1] === "" && lines[heading + 2] === line;
+  const present = lines[heading + 1] === "" && (lines[heading + 2] === line || LEAD_LINES.includes(lines[heading + 2]));
   lines.splice(heading + 1, present ? 2 : 0, "", line);
   return lines.join("\n");
 }
@@ -825,7 +826,7 @@ export function plan(root, models) {
   }
   for (const runtime of PROMPT_RUNTIMES) {
     for (const skill of slashCommands(read(COMMANDS_DOC), publicSkills(join(root, SKILLS)))) {
-      const preamble = leads.get(`${SKILLS}/${skill.name}/SKILL.md`) === runtime.preamble;
+      const preamble = PREAMBLE_RUNTIMES.some((r) => leads.get(`${SKILLS}/${skill.name}/SKILL.md`) === r.preamble);
       put(`${runtime.prompts}/${skill.name}.md`, promptStub(skill, runtime, { preamble }));
     }
   }
@@ -916,7 +917,7 @@ export function problems(root, models) {
   const skillsDir = join(root, SKILLS);
   const read = (rel) => readFileSync(join(root, rel), "utf8");
   const pathExists = (rel) => existsSync(join(root, rel));
-  const packages = RUNTIMES.map((runtime) =>
+  const packages = RUNTIMES.filter((runtime) => runtime.manifest).map((runtime) =>
     attempt(() => {
       const text = read(runtime.manifest);
       let manifest;

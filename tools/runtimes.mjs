@@ -2,6 +2,7 @@
 // generator iterates, with each runtime's Model names renderer, models.json
 // check, versioned manifest, packaging validator, and hooks files.
 
+import { panelFamilies, parseEntry } from "../plugins/pstack/skills/setup-pstack/scripts/t3-sheet.mjs";
 import { code, codeList, PLUGIN, SKILLS } from "./plugin.mjs";
 
 // Every runtime other than Claude Code that reads the skills through a mapping
@@ -37,6 +38,17 @@ export const RUNTIMES = [
     checkModels: checkPiModels,
     manifest: "package.json",
     validate: ({ text, pathExists }) => validatePiPackage(text, { pathExists }),
+  },
+  // T3 is not a build: t3-pstack ships in the Claude Code and Codex manifests
+  // and dispatches through the t3-code MCP tools on either host, so its row has
+  // no manifest. It comes last so its preamble wins on a skill both tables list.
+  {
+    name: "T3",
+    key: "t3",
+    mapping: "t3-tools.md",
+    modelNames: t3ModelNamesSection,
+    checkModels: checkT3Models,
+    skillPreambles: true,
   },
 ].map((runtime) => ({
   ...runtime,
@@ -81,6 +93,49 @@ function checkPiModels(pi, { raw, fail, isObject }) {
       }
     }
   }
+}
+
+// Every tier needs a T3 target in the sheet grammar of setup-pstack's
+// t3-sheet.mjs, the panel must span families, and every role must name a tier
+// so the T3 sheet can follow it.
+function checkT3Models(t3, { raw, fail, unique }) {
+  for (const tier of Object.keys(raw.tiers)) {
+    if (!Object.hasOwn(t3, tier)) fail(`t3 has no target for tier "${tier}"`);
+  }
+  for (const [tier, value] of Object.entries(t3)) {
+    if (!Object.hasOwn(raw.tiers, tier)) fail(`t3 names "${tier}", which is not a tier`);
+    if (tier !== "panel" && typeof value !== "string") fail(`t3 "${tier}" must be one target, not a list`);
+    unique([value].flat(), `t3 "${tier}"`);
+    const entries = [value].flat().map((entry) => {
+      if (typeof entry !== "string" || entry !== entry.trim().split(/\s+/).join(" ")) {
+        fail(`t3 "${tier}": ${JSON.stringify(entry)} is not one target written with single spaces`);
+      }
+      let parsed;
+      try {
+        parsed = parseEntry(entry);
+      } catch (err) {
+        fail(`t3 "${tier}": ${err.message}`);
+      }
+      if (!parsed) fail(`t3 "${tier}" must name a target, not inherit the parent`);
+      return parsed;
+    });
+    if (tier === "panel" && panelFamilies(entries).size < 2) fail("t3 panel needs at least two model families");
+  }
+  for (const role of raw.roles) {
+    if (typeof role.models !== "string") fail(`role "${role.role}" lists models; the t3 sheet needs it to name a tier`);
+  }
+}
+
+export function t3ModelNamesSection(models) {
+  const rows = models.roles.map((r) => `${r.role}: ${[models.t3[r.tier]].flat().join(", ")}`).join("\n");
+  return (
+    "On T3 the sheet names T3 targets, not the Claude aliases in each skill's Models section. Resolve every role " +
+    "from the sheet (see [The sheet](#the-sheet)). A role with no line runs on its tier's default below, and the " +
+    "aliases in the skills' Models sections do not apply. The defaults, as a complete sheet:\n\n" +
+    "```markdown\n# pstack model configuration (T3)\n\n" +
+    rows +
+    "\n\nsession hook: on\n```"
+  );
 }
 
 export function codexModelNamesSection(models) {

@@ -22,7 +22,7 @@ function runHook({ sheet, codexHome, homeSheet, context = mandate, host = "cmd" 
     for (const [dir, content] of [[join(profile, ".codex"), homeSheet], [sheetRoot, sheet]]) {
       if (content !== undefined) {
         mkdirSync(dir, { recursive: true });
-        writeSheet(join(dir, "pstack-models.md"), content);
+        writeSheet(join(dir, "t3-pstack-models.md"), content);
       }
     }
     const contextPath = join(plugin, "hooks/session-start-context.md");

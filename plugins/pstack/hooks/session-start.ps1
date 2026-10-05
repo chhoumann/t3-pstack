@@ -4,7 +4,7 @@ $sheetRoot = $env:CODEX_HOME
 if (-not $sheetRoot) {
     $sheetRoot = Join-Path $env:USERPROFILE '.codex'
 }
-$sheet = Join-Path $sheetRoot 'pstack-models.md'
+$sheet = Join-Path $sheetRoot 't3-pstack-models.md'
 $off = $false
 if (Test-Path -LiteralPath $sheet -PathType Leaf) {
     # An unreadable sheet leaves the hook on, as session-start.sh does.

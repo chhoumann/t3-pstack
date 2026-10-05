@@ -5,7 +5,7 @@ description: Configure which models pstack uses per role. Detects available mode
 
 # Setup pstack
 
-On Codex, read the [platform mapping](../poteto-mode/references/codex-tools.md), including its per-skill notes, before following this skill.
+On T3, read the [platform mapping](../poteto-mode/references/t3-tools.md), including its per-skill notes, before following this skill.
 
 On another runtime, read [Other runtimes](#other-runtimes) below for where the sheet lives and how it loads; the steps are the same.
 

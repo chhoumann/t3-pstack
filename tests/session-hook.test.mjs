@@ -47,7 +47,7 @@ function runHook(runtime, sheet, command = sessionStart[runtimes[runtime].hooks]
   const sheetRoot = join(home, sheetDir);
   if (sheet !== null) {
     mkdirSync(sheetRoot);
-    writeSheet(join(sheetRoot, "pstack-models.md"), sheet);
+    writeSheet(join(sheetRoot, "t3-pstack-models.md"), sheet);
   }
   try {
     const r = spawnSync("sh", ["-c", command], {

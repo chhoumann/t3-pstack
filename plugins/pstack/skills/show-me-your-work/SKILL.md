@@ -5,6 +5,8 @@ description: "Keep a reviewable decision trail for long-running or unattended wo
 
 # Show me your work
 
+On T3, read the [platform mapping](../poteto-mode/references/t3-tools.md), including its per-skill notes, before following this skill.
+
 Keep one canonical log.
 
 ## The format

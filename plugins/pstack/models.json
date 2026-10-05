@@ -31,6 +31,15 @@
     "strongest": "gpt-6-astra",
     "panel": ["gpt-6-astra", "gpt-6-sol", "gpt-6-luna"]
   },
+  "t3": {
+    "default": "claudeAgent/claude-opus-5-5 effort=high",
+    "strongest": "claudeAgent/claude-fable-5-1 effort=xhigh",
+    "panel": [
+      "claudeAgent/claude-opus-5-5 effort=high",
+      "codex/gpt-6.1-sol reasoningEffort=xhigh",
+      "grok/grok-4.7 reasoningEffort=high"
+    ]
+  },
   "pi": {
     "fallback": "anthropic",
     "models": {

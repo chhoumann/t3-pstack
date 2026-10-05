@@ -1,16 +1,17 @@
 {
-  "name": "pstack",
-  "displayName": "pstack (Claude Code port)",
-  "version": "0.9.69",
-  "description": "If you want to go fast, go deep first. pstack helps you write less, but higher quality code. rigorous agent workflows you can parallelize with confidence. Ported from cursor/plugins/pstack to Claude Code. Original pstack by Lauren Tan (poteto).",
+  "name": "t3-pstack",
+  "displayName": "t3-pstack (pstack for T3 Code)",
+  "version": "1.0.0",
+  "description": "pstack for T3 Code. Rigorous agent workflows whose subagents, panels, schedules, and PR watches dispatch through T3's orchestration, so panels mix Claude, GPT, and Grok. Original pstack by Lauren Tan (poteto); Claude Code port by Michael Denyer.",
   "author": {
-    "name": "Michael Denyer",
-    "url": "https://github.com/michael-denyer"
+    "name": "Christian Bager Bach Houmann",
+    "url": "https://github.com/chhoumann"
   },
-  "homepage": "https://github.com/michael-denyer/pstack-claude",
-  "repository": "https://github.com/michael-denyer/pstack-claude",
+  "homepage": "https://github.com/chhoumann/t3-pstack",
+  "repository": "https://github.com/chhoumann/t3-pstack",
   "license": "MIT",
   "keywords": [
+    "t3-code",
     "pstack",
     "poteto-mode",
     "workflow",

@@ -1,15 +1,16 @@
 {
-  "name": "pstack",
-  "version": "0.9.69",
-  "description": "If you want to go fast, go deep first. pstack helps you write less, but higher quality code. rigorous agent workflows you can parallelize with confidence. Codex port of the Claude Code plugin; skills are shared, tool names resolve via skills/poteto-mode/references/codex-tools.md. Original pstack by Lauren Tan (poteto).",
+  "name": "t3-pstack",
+  "version": "1.0.0",
+  "description": "pstack for T3 Code on a Codex host. Subagents, panels, schedules, and PR watches dispatch through T3's orchestration (skills/poteto-mode/references/t3-tools.md); other tool names resolve via codex-tools.md. Original pstack by Lauren Tan (poteto); Claude Code port by Michael Denyer.",
   "author": {
-    "name": "Michael Denyer",
-    "url": "https://github.com/michael-denyer"
+    "name": "Christian Bager Bach Houmann",
+    "url": "https://github.com/chhoumann"
   },
-  "homepage": "https://github.com/michael-denyer/pstack-claude",
-  "repository": "https://github.com/michael-denyer/pstack-claude",
+  "homepage": "https://github.com/chhoumann/t3-pstack",
+  "repository": "https://github.com/chhoumann/t3-pstack",
   "license": "MIT",
   "keywords": [
+    "t3-code",
     "pstack",
     "poteto-mode",
     "workflow",
@@ -30,10 +31,10 @@
   "skills": "./skills/",
   "hooks": "./hooks/codex-hooks.json",
   "interface": {
-    "displayName": "pstack",
+    "displayName": "t3-pstack",
     "shortDescription": "Rigorous, parallelizable agent workflows: go deep first, write less, verify everything",
-    "longDescription": "pstack guides agent work through poteto-mode's principles, parallel design exploration (architect/arena), adversarial multi-model review (interrogate), root-cause debugging, prose deslopping, and verified delivery. Skills are shared with the Claude Code build; on Codex, tool names resolve via the codex-tools mapping.",
-    "developerName": "Michael Denyer (port of Lauren Tan's pstack)",
+    "longDescription": "pstack for T3 Code: poteto-mode's principles, parallel design exploration (architect/arena), adversarial multi-model review (interrogate), and verified delivery, with every panel and fan-out dispatched through T3 so it mixes Claude, GPT, and Grok.",
+    "developerName": "Christian Bager Bach Houmann (fork of Michael Denyer's pstack-claude, a port of Lauren Tan's pstack)",
     "category": "Developer Tools",
     "capabilities": [
       "Interactive",
@@ -44,7 +45,7 @@
       "Work on this in poteto-mode.",
       "Interrogate this diff with multiple models."
     ],
-    "websiteURL": "https://github.com/michael-denyer/pstack-claude",
+    "websiteURL": "https://github.com/chhoumann/t3-pstack",
     "brandColor": "#7C3AED",
     "composerIcon": "./assets/pstack-icon.png",
     "logo": "./assets/pstack-icon.png"

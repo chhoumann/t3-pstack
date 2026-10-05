@@ -568,7 +568,7 @@ describe("lead lines", () => {
   });
 
   test("Codex stamps a preamble on its noted skills and Pi stamps none", () => {
-    expect(RUNTIMES.map((r) => r.name)).toEqual(["Codex", "Pi"]);
+    expect(RUNTIMES.map((r) => r.name)).toEqual(["Codex", "Pi", "T3"]);
     expect(codex.preamble).toBe(
       "On Codex, read the [platform mapping](../poteto-mode/references/codex-tools.md), including its per-skill notes, before following this skill.",
     );
@@ -592,13 +592,13 @@ describe("lead lines", () => {
     );
   });
 
-  test("a prompt stub repeats the codex-tools.md pointer only when its skill lacks the stamped preamble", () => {
+  test("a prompt stub repeats the codex-tools.md pointer only when its skill lacks a stamped preamble", () => {
     const { files } = plan(repoRoot);
     const stubs = Object.keys(files).filter((rel) => rel.startsWith("plugins/pstack/.codex-plugin/prompts/"));
     const pointsAtMapping = (rel) => files[rel].includes("codex-tools.md");
     const carriesPreamble = (rel) => {
       const skill = `plugins/pstack/skills/${basename(rel, ".md")}/SKILL.md`;
-      return readFileSync(join(repoRoot, skill), "utf8").includes("On Codex, read the [platform mapping]");
+      return readFileSync(join(repoRoot, skill), "utf8").includes(", read the [platform mapping]");
     };
     expect(stubs.filter(carriesPreamble).length).toBeGreaterThan(0);
     expect(stubs.filter((rel) => !carriesPreamble(rel)).length).toBeGreaterThan(0);
@@ -898,8 +898,8 @@ describe("plan, changes, apply", () => {
   test("problems reports a lead line in a file that does not own it", () => {
     const root = repoCopy();
     append(root, "plugins/pstack/skills/tdd/SKILL.md", `\n${codex.preamble}\n`);
-    const codexTools = "plugins/pstack/skills/poteto-mode/references/codex-tools.md";
-    writeFileSync(join(root, codexTools), readFileSync(join(root, codexTools), "utf8").replace(/^\| `why` \|.*\n/m, ""));
+    const t3Tools = "plugins/pstack/skills/poteto-mode/references/t3-tools.md";
+    writeFileSync(join(root, t3Tools), readFileSync(join(root, t3Tools), "utf8").replace(/^\| `why` \|.*\n/m, ""));
     const failures = problems(root).filter((f) => f.startsWith("generator-owned lead lines"));
     expect(failures).toHaveLength(1);
     expect(failures[0]).toContain("\nplugins/pstack/skills/why/SKILL.md:");
