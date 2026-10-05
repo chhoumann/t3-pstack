@@ -175,6 +175,10 @@ describe("checkSheet against a catalog", () => {
   });
 });
 
+// Each test spawns real node processes, and the first node start on a cold CI
+// runner can take several seconds.
+const CLI_TIMEOUT = 30_000;
+
 describe("t3-sheet.mjs CLI", () => {
   const dir = mkdtempSync(join(tmpdir(), "t3-sheet-"));
   const run = (path, sheet) => {
@@ -191,11 +195,11 @@ describe("t3-sheet.mjs CLI", () => {
         stdout: 'bug-fix: grok/grok-9: "grok" does not list model "grok-9"\n',
       });
     }
-  });
+  }, CLI_TIMEOUT);
 
   test("exits 0 on a sheet that dispatches", () => {
     expect(run(script, "bug-fix: grok/grok-4.7 reasoningEffort=xhigh\n").status).toBe(0);
-  });
+  }, CLI_TIMEOUT);
 });
 
 describe("the models.json t3 block", () => {
