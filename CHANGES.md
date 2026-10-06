@@ -2,6 +2,12 @@
 
 This file is the release changelog, with one `## <version> - <title>` entry per release, newest first. The Cursor-to-Claude rewrite rules live in [`tools/substitutions.json`](tools/substitutions.json), and the [sync boundary](CONTRIBUTING.md#the-sync-boundary) in `CONTRIBUTING.md` defines how a change to upstream's skill content is declared.
 
+## 1.0.2 - an arena judge never scores its own candidate
+
+A live architect run used GPT-6-Astra as both a runner and the cross-judge, and the judge picked Astra's own design. The rule only required the judge's family to differ from the parent thread's.
+
+- `t3-tools.md` now picks the cross-judge from pool entries whose model ran no candidate, preferring a family other than the parent's, and says so when no pool entry qualifies.
+
 ## 1.0.1 - delegated steps actually dispatch, and fixes get a cross-family review
 
 A live bug-fix thread ran poteto-mode end to end with zero `delegate_task` calls: it never opened `t3-tools.md` or the sheet, so every step ran on the parent model.
