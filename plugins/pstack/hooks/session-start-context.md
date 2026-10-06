@@ -11,5 +11,7 @@ It routes to the right pstack skill from there. For smaller tasks, such as a con
 
 When the intent is already specific, enter that skill directly: `t3-pstack:tdd`, `t3-pstack:architect`, `t3-pstack:how`, `t3-pstack:why`, `t3-pstack:arena`, `t3-pstack:interrogate`.
 
+This runs on T3: before the first subagent or panel in a session, read poteto-mode's `references/t3-tools.md` and the `t3-pstack-models.md` sheet. A step a playbook says to delegate goes through `delegate_task` to that role's sheet entry, and the reply lists which provider and model ran each step.
+
 User instructions (CLAUDE.md, AGENTS.md, direct requests) take precedence. Other session-start mandates, such as superpowers, still apply. Their skill checks run as before, and when a task meets the criteria above they route implementation through poteto-mode.
 </EXTREMELY_IMPORTANT>

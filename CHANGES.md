@@ -2,6 +2,14 @@
 
 This file is the release changelog, with one `## <version> - <title>` entry per release, newest first. The Cursor-to-Claude rewrite rules live in [`tools/substitutions.json`](tools/substitutions.json), and the [sync boundary](CONTRIBUTING.md#the-sync-boundary) in `CONTRIBUTING.md` defines how a change to upstream's skill content is declared.
 
+## 1.0.1 - delegated steps actually dispatch, and fixes get a cross-family review
+
+A live bug-fix thread ran poteto-mode end to end with zero `delegate_task` calls: it never opened `t3-tools.md` or the sheet, so every step ran on the parent model.
+
+- The session-start context now tells each session to read `t3-tools.md` and the sheet before its first subagent or panel, and to route delegated steps through `delegate_task`.
+- `t3-tools.md` requires delegated steps to dispatch on their sheet entry, with a stated reason when one runs in-thread, and a dispatch ledger at the end of each playbook reply naming the provider and model each step ran on.
+- Bug fix, Feature, and Refactoring run **interrogate** on the diff before Opening a PR, except for mechanical changes.
+
 ## 1.0.0 - t3-pstack: dispatch through T3 Code
 
 t3-pstack is pstack-claude 0.9.69 with every subagent, panel, fan-out, schedule, and PR watch routed through the `t3-code` MCP tools, so one panel can run Claude, GPT, and Grok children. It targets T3 only; outside T3, use pstack-claude. Its version line is independent of pstack-claude's, and each upstream merge adds an entry here naming the merged version.

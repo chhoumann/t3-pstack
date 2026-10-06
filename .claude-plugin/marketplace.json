@@ -10,7 +10,7 @@
       "name": "t3-pstack",
       "source": "./plugins/pstack",
       "description": "pstack for T3 Code: rigorous agent workflows whose panels and fan-outs run across model families through T3. Original pstack by Lauren Tan (poteto); Claude Code port by Michael Denyer.",
-      "version": "1.0.0"
+      "version": "1.0.1"
     }
   ]
 }
