@@ -532,9 +532,10 @@ describe("lead lines", () => {
     const { files } = plan(repoRoot);
     const stubs = Object.keys(files).filter((rel) => rel.startsWith("plugins/pstack/.codex-plugin/prompts/"));
     const pointsAtMapping = (rel) => files[rel].includes("codex-tools.md");
+    const honoured = [codex.preamble, RUNTIMES.find((r) => r.name === "T3").preamble];
     const carriesPreamble = (rel) => {
-      const skill = `plugins/pstack/skills/${basename(rel, ".md")}/SKILL.md`;
-      return readFileSync(join(repoRoot, skill), "utf8").includes(", read the [platform mapping]");
+      const text = readFileSync(join(repoRoot, `plugins/pstack/skills/${basename(rel, ".md")}/SKILL.md`), "utf8");
+      return honoured.some((line) => text.includes(line));
     };
     expect(stubs.filter(carriesPreamble).length).toBeGreaterThan(0);
     expect(stubs.filter((rel) => !carriesPreamble(rel)).length).toBeGreaterThan(0);

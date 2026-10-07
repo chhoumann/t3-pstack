@@ -1,8 +1,8 @@
 {
   "name": "t3-pstack",
-  "displayName": "pstack (GitHub Copilot port)",
+  "displayName": "t3-pstack (no Copilot support)",
   "version": "1.0.3",
-  "description": "If you want to go fast, go deep first. pstack helps you write less, but higher quality code. rigorous agent workflows you can parallelize with confidence. Ported from cursor/plugins/pstack to GitHub Copilot CLI and app. Original pstack by Lauren Tan (poteto).",
+  "description": "t3-pstack runs only inside T3 Code; on GitHub Copilot install pstack@pstack-claude from michael-denyer/pstack-claude.",
   "author": {
     "name": "Christian Bager Bach Houmann",
     "url": "https://github.com/chhoumann"

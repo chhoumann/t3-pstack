@@ -242,3 +242,19 @@ describe("the T3 preamble", () => {
     expect(loadLeadLines().get("plugins/pstack/skills/automate-me/SKILL.md")).toEqual([copilot.preamble, t3.preamble]);
   });
 });
+
+describe("the T3 session-start context", () => {
+  const pluginRoot = join(root, "plugins/pstack");
+
+  test.each(["claude", "codex"])("the %s hook tells the session to route and dispatch through T3", (runtime) => {
+    const home = mkdtempSync(join(tmpdir(), "t3-session-"));
+    const result = spawnSync("sh", [join(pluginRoot, "hooks/session-start.sh"), runtime], {
+      encoding: "utf8",
+      env: { PATH: process.env.PATH, HOME: home, CLAUDE_PLUGIN_ROOT: pluginRoot, GIT_CONFIG_GLOBAL: "/dev/null" },
+    });
+    expect(result.status).toBe(0);
+    for (const phrase of ["t3-pstack:poteto-mode", "references/t3-tools.md", "t3-pstack-models.md", "delegate_task"]) {
+      expect(result.stdout).toContain(phrase);
+    }
+  });
+});

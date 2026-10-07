@@ -50,7 +50,7 @@ Overlay ledger. These are the only upstream files we change:
 | `tests/generate.test.mjs`, `tests/sync.test.mjs`, `tests/session-hook.test.mjs`, `tests/session-hook-windows.test.mjs` | Upstream tests learn the T3 row, the `t3-pstack` manifest name, and the `t3-pstack-models.md` sheet name, and the sync fixture copies the sheet script that `runtimes.mjs` imports (about 12 lines) | Low |
 | `plugins/pstack/models.json` | A `t3` block: default, strongest and panel as T3 targets | Low, since it is one new key |
 | Manifests, marketplaces, `README.md` | `t3-pstack` plugin and marketplace names, author, and install text, in every manifest including Copilot's, which the generator requires to share the Claude Code manifest's name | Low |
-| `hooks/session-start.sh`, `hooks/session-start.ps1`, `hooks/session-start-context.md` | The `claude` and `codex` arms read `t3-pstack-models.md`, and the context tells each session to read `t3-tools.md` and the sheet. The `copilot` arm stays upstream's | Low |
+| `hooks/session-start.sh`, `hooks/session-start.ps1`, `hooks/session-start-context.md` | The `claude` and `codex` arms read `t3-pstack-models.md`, and the context tells each session to read `t3-tools.md` and the sheet. t3-pstack does not support GitHub Copilot: the `copilot` arm is carried only to keep merges cheap, and since it wraps the same context file it would print the T3 mandate | Low |
 | `VERSION`, `CHANGES.md` | Own version line (see open question 4) | One mechanical conflict per merge |
 | Generated preambles in about 15 SKILL.md files | Stamped by the generator | On a conflict, take upstream's version and regenerate |
 
