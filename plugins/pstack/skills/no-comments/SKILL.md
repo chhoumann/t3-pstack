@@ -5,6 +5,8 @@ description: "Spawn the comment-sicko subagent, fix accepted findings, and offer
 
 # No comments
 
+On GitHub Copilot, read the [platform mapping](../poteto-mode/references/copilot-tools.md), including its per-skill notes, before following this skill.
+
 On T3, read the [platform mapping](../poteto-mode/references/t3-tools.md), including its per-skill notes, before following this skill.
 
 Spawn comment-sicko. Act on accepted findings.

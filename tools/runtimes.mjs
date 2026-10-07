@@ -6,16 +6,18 @@ import { panelFamilies, parseEntry } from "../plugins/pstack/skills/setup-pstack
 import { code, codeList, PLUGIN, SKILLS } from "./plugin.mjs";
 
 // Every runtime other than Claude Code that reads the skills through a mapping
-// file under poteto-mode/references/. A row gives the runtime its models.json
-// block (`key`, checked by `checkModels`) and the generated Model names section
-// in its mapping file. A `skillPreambles` runtime also gets a preamble under
+// file under poteto-mode/references/. A row gives the runtime the generated
+// Model names section in its mapping file, and a row with a `key` its
+// models.json block, checked by `checkModels`. A `skillPreambles` runtime also gets a preamble under
 // the first heading of each skill its Per-skill notes table lists, and a
 // runtime with a `prompts` directory a slash stub per public skill there. Pi
 // has neither: its one pointer is hand-written in poteto-mode's Platform
 // Adaptation section. `manifest` is the file the generator stamps VERSION
 // into, `validate` checks the runtime's packaging against the tree once that
 // manifest parses, and `hooks` lists the hooks files the manifest names,
-// relative to the plugin root.
+// relative to the plugin root. GitHub Copilot stamps preambles but has no
+// prompts directory, since its CLI and app list plugin skills as slash commands
+// themselves, and no models.json block, since it ships no default models.
 export const RUNTIMES = [
   {
     name: "Codex",
@@ -39,9 +41,23 @@ export const RUNTIMES = [
     manifest: "package.json",
     validate: ({ text, pathExists }) => validatePiPackage(text, { pathExists }),
   },
+  {
+    name: "GitHub Copilot",
+    mapping: "copilot-tools.md",
+    modelNames: copilotModelNamesSection,
+    skillPreambles: true,
+    // Copilot reads .github/plugin/plugin.json before .claude-plugin/plugin.json,
+    // so it gets its own hooks file and never runs the Claude Code hooks.
+    manifest: `${PLUGIN}/.github/plugin/plugin.json`,
+    validate: ({ manifest, read, pathExists }) =>
+      validateCopilotManifest(manifest, { claude: JSON.parse(read(`${PLUGIN}/.claude-plugin/plugin.json`)), pathExists }),
+    hooks: (manifest) => [manifest.hooks],
+    pluginRootVar: "COPILOT_PLUGIN_ROOT",
+  },
   // T3 is not a build: t3-pstack ships in the Claude Code and Codex manifests
   // and dispatches through the t3-code MCP tools on either host, so its row has
-  // no manifest. It comes last so its preamble wins on a skill both tables list.
+  // no manifest. Its preamble replaces the Codex one, because t3-tools.md
+  // sends a Codex host on to codex-tools.md for everything but dispatch.
   {
     name: "T3",
     key: "t3",
@@ -49,6 +65,7 @@ export const RUNTIMES = [
     modelNames: t3ModelNamesSection,
     checkModels: checkT3Models,
     skillPreambles: true,
+    displaces: "Codex",
   },
 ].map((runtime) => ({
   ...runtime,
@@ -169,7 +186,10 @@ export function piModelNamesSection(models) {
     "\n\nPi warns that Anthropic bills Claude used through Pi per token, as extra usage, even on a Claude subscription. " +
     "Pi shows that warning only in interactive mode, never for the `pi --mode rpc` children the `agent` tool runs.\n\n" +
     "A `pi models: opus=<provider/id>, sonnet=<provider/id>` line in the Pi override sheet points each alias " +
-    "it names at another Pi model, whatever the session's provider. The `agent` tool also takes a full " +
+    "it names at another Pi model, whatever the session's provider. Add one when the session's provider has no " +
+    `column above and Pi has no credentials for ${code(fallback)}, because each alias then resolves to an ${code(`${fallback}/*`)} ` +
+    `ID and the ${code("agent")} call fails with ${code(`No API key found for ${fallback}`)}. ` +
+    "The `agent` tool also takes a full " +
     "`provider/id`, passed through unchanged, and `inherit-parent`, `auto`, or no `model` runs the child on the " +
     "parent's current model. Diverse-model panels (`arena`, `architect`, `interrogate`, `how` critics, `reflect`) " +
     "stay diverse only while their aliases resolve to distinct models. If one model family is all you can reach, " +
@@ -196,6 +216,16 @@ export function validateCodexMarketplace(text, { expectedName, pathExists }) {
   }
 }
 
+// The Copilot manifest keeps the Claude Code plugin's name and points at a
+// hooks file in the plugin. Copilot loads skills/ and agents/ by default.
+export function validateCopilotManifest(manifest, { claude, pathExists }) {
+  const at = `${PLUGIN}/.github/plugin/plugin.json`;
+  if (manifest.name !== claude.name) throw new Error(`${at}: name "${manifest.name}" != Claude Code manifest name "${claude.name}"`);
+  if (typeof manifest.hooks !== "string" || !pathExists(`${PLUGIN}/${manifest.hooks}`)) {
+    throw new Error(`${at}: hooks "${manifest.hooks}" is not a file in the plugin`);
+  }
+}
+
 const PI_PACKAGE = { skills: SKILLS, extensions: `${PLUGIN}/pi/index.ts` };
 
 // `pi install` reads the repo-root package.json's `pi` key. A path there that
@@ -215,4 +245,48 @@ export function validatePiPackage(text, { pathExists }) {
     }
     if (!listed.includes(`./${required}`)) fail(`pi.${key} must list ./${required}`);
   }
+}
+
+// The skills that dispatch on role models, which on Copilot need a model sheet.
+export const roleSkills = (models) => [...new Set(models.roles.map((r) => r.skill))].sort();
+
+// Copilot ships no default slugs: the models a Copilot account can reach vary
+// by plan and policy, so the user picks them in setup-pstack.
+export function copilotModelNamesSection(models) {
+  const strongest = models.roles.filter((r) => r.tier === "strongest");
+  return (
+    "Skills name Claude Code model aliases in their Models sections. Those aliases are not Copilot model IDs, " +
+    "and the Copilot build ships no default model IDs: the models an account can reach depend on its plan " +
+    "and policy, so the user picks them once.\n\n" +
+    "- The model sheet is `${COPILOT_HOME:-~/.copilot}/pstack-models.md`. It sits outside the workspace, so reading it " +
+    "asks for path access. The plugin's SessionStart hook reads it, checks it, and adds its role lines to the " +
+    "session context as the user's saved pstack model choices. Take role models from that block and do not `view` the " +
+    "sheet. A role line names the model for that role.\n" +
+    "- Read the sheet only when that block and the hook's `sheet invalid` or no-sheet note are all missing, as in a " +
+    "skills-only install with no hook. `view`, `create`, and `edit` take literal paths and expand neither `~` nor " +
+    "`$COPILOT_HOME`, so print the sheet's absolute path with `bash` first (" +
+    "`echo \"${COPILOT_HOME:-$HOME/.copilot}/pstack-models.md\"`" +
+    ") and read and write exactly that path; do not append `.copilot` or any other segment to it. A session with its " +
+    "own `COPILOT_HOME` then never touches `~/.copilot`.\n" +
+    `- No sheet, or the hook reports \`sheet invalid\`: before a skill that needs a role model (${roleSkills(models).map(code).join(", ")}), stop, load ` +
+    "`setup-pstack` with the `skill` tool, and finish it first. In that same session, use the values it just wrote; " +
+    "later sessions get them from the hook. Do not ask again on later runs.\n" +
+    "- A role line in the sheet is the user's explicit model instruction, so pass it as the `task` tool's " +
+    "`model` parameter. `inherit-parent` or `auto` omits `model`.\n" +
+    "- The plugin's `PreToolUse` hook enforces this for pstack agents. While the sheet is valid, it denies a `task` " +
+    "call whose `agent_type` starts with `pstack:` and whose `model` is not one of the sheet's values, and its reason " +
+    "lists the saved IDs. Retry with the role's saved model; never retry on another unsaved model. It leaves calls " +
+    "with no `model` and other agent types alone.\n" +
+    `- Roles that default to the strongest model (${strongest.map((r) => code(r.role)).join(", ")}): ` +
+    "the strongest model the user chose.\n" +
+    "- Diverse-model panels (`arena`, `architect`, `interrogate`, `how` critics, `reflect`): the adversarial " +
+    "signal comes from model diversity, so fill a panel from distinct vendors in the `task` tool's `model` " +
+    "list (Claude, GPT, Gemini, Grok, and so on). pstack ships no default Copilot panel. If only one vendor is " +
+    "reachable, vary reasoning effort and note in the verdict that diversity was reduced.\n\n" +
+    "`setup-pstack` lists the models from the `model` enum of the `task` tool and writes only IDs it saw there. " +
+    "After it writes the sheet, it runs its `check-sheet.sh` script, which applies the hook's checks.\n\n" +
+    "Run `setup-pstack`, and the parent session that orchestrates a panel, on a model at least as strong as " +
+    "gpt-5.4-mini or a Sonnet-class Claude model. On a Haiku-class model, setup picked models the user never " +
+    "chose in about half of the smoke runs."
+  );
 }

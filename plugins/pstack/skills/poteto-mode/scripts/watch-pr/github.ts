@@ -1,4 +1,4 @@
-import { parseLandingRevision, type LandingRevision } from "./landing.ts";
+import { parseLandingRevision } from "./landing.ts";
 import { spawn } from "node:child_process";
 import { DeadlineExceeded, type WatchDeadline } from "./deadline.ts";
 import type * as T from "./types.ts";
@@ -82,7 +82,13 @@ function run(
     });
     child.on("error", (error) => {
       clearTimeout(timer);
-      reject(error);
+      reject(
+        new WatcherQueryError({
+          kind: "spawn-failed",
+          retryable: false,
+          detail: `could not run ${argv[0]}: ${error.message}`,
+        })
+      );
     });
     child.on("close", (code) => {
       clearTimeout(timer);
@@ -551,22 +557,6 @@ export class GhGitHubReader implements T.GitHubReader {
       context
     );
   }
-  async revision(context: T.PrContext): Promise<LandingRevision> {
-    const value = record(
-      await this.runJson([
-        "gh",
-        "pr",
-        "view",
-        String(context.number),
-        "--repo",
-        `${context.owner}/${context.repo}`,
-        "--json",
-        "headRefOid,baseRefName,baseRefOid",
-      ]),
-      "pull request head"
-    );
-    return parseLandingRevision(value, context);
-  }
   async openPullRequests(
     repository: T.Repository
   ): Promise<readonly T.OpenPullRequest[]> {
@@ -612,6 +602,20 @@ export class GhGitHubReader implements T.GitHubReader {
         ),
       };
     });
+  }
+  async defaultBranch(repository: T.Repository): Promise<string> {
+    const value = await this.runJson([
+      "gh",
+      "repo",
+      "view",
+      `${repository.owner}/${repository.repo}`,
+      "--json",
+      "defaultBranchRef",
+    ]);
+    return string(
+      at(value, ["defaultBranchRef", "name"]),
+      "defaultBranchRef.name"
+    );
   }
   async checksFastPath(context: T.PrContext): Promise<T.ChecksFastPath> {
     const result = await this.run([
@@ -748,6 +752,7 @@ export async function resolveChecks(
   if (direct !== null)
     return { kind: "reported", source: "gh-pr-checks", checks: direct };
   const checks: T.Check[] = [];
+  const cursors = new Set<string>();
   let after: string | null = null;
   let headHasRollup = true;
   do {
@@ -758,6 +763,11 @@ export async function resolveChecks(
     }
     checks.push(...page.checks);
     after = page.endCursor;
+    if (after !== null) {
+      if (cursors.has(after))
+        missing("contexts.pageInfo.endCursor must advance", after);
+      cursors.add(after);
+    }
   } while (after !== null);
   const fallback = nonEmpty(checks);
   if (fallback !== null)
@@ -815,13 +825,17 @@ export async function resolveContext(args: {
 }
 export function orderStack(
   context: T.PrContext,
-  open: readonly T.OpenPullRequest[]
+  trunk: string,
+  everyOpen: readonly T.OpenPullRequest[]
 ): T.NonEmpty<T.PrContext> {
-  const byNumber = new Map(open.map((pr) => [pr.number, pr]));
   const localHead = (pr: T.OpenPullRequest): boolean =>
     pr.headRepository !== null &&
     pr.headRepository.owner.toLowerCase() === context.owner.toLowerCase() &&
     pr.headRepository.repo.toLowerCase() === context.repo.toLowerCase();
+  const open = everyOpen.filter(
+    (pr) => !(localHead(pr) && pr.headRefName === trunk)
+  );
+  const byNumber = new Map(open.map((pr) => [pr.number, pr]));
   const byHead = new Map<string, T.OpenPullRequest[]>();
   const invalid = (detail: string): never => {
     throw new WatcherQueryError({
@@ -897,5 +911,5 @@ export async function discoverStack(
       retryable: true,
       detail: `open PR list reached the ${OPEN_PR_LIMIT}-PR limit, so the stack may be incomplete`,
     });
-  return orderStack(context, open);
+  return orderStack(context, await reader.defaultBranch(context), open);
 }

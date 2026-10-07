@@ -44,12 +44,13 @@ Overlay ledger. These are the only upstream files we change:
 
 | File | Change | Merge cost |
 | --- | --- | --- |
-| `tools/runtimes.mjs` | T3 row, `checkT3Models`, `t3ModelNamesSection` (about 40 lines, appended) | Low, since it is appended |
-| `tools/generate.mjs` | Let a row have no `manifest`, because T3 ships inside the Claude and Codex manifests. `stampLeadLine` replaces another runtime's lead line. A Codex stub omits its pointer when the skill carries any stamped preamble (4 lines) | Low |
+| `tools/runtimes.mjs` | T3 row, last, with `displaces: "Codex"`, plus `checkT3Models` and `t3ModelNamesSection` (about 40 lines, appended) | Low, since it is appended |
+| `tools/generate.mjs` | Let a row have no `manifest`, because T3 ships inside the Claude and Codex manifests. A row's preamble drops the one of the runtime it `displaces`, so a T3-listed skill carries the Copilot and T3 preambles but not Codex's. `stampLeadLine` drops any generator-owned lead line the file no longer owns. A Codex stub omits its pointer when the skill carries the T3 preamble (about 8 lines) | Low |
 | `tools/substitutions.json` | The sync denylist's `grok-` token becomes `(?<!/)grok-`, so the T3 target `grok/grok-4.7` passes the sync test that runs the denylist over the installed plugin | Low |
-| `tests/generate.test.mjs`, `tests/sync.test.mjs` | Three upstream tests learn the T3 row, and the sync fixture copies the sheet script that `runtimes.mjs` imports (about 8 lines) | Low |
+| `tests/generate.test.mjs`, `tests/sync.test.mjs`, `tests/session-hook.test.mjs`, `tests/session-hook-windows.test.mjs` | Upstream tests learn the T3 row, the `t3-pstack` manifest name, and the `t3-pstack-models.md` sheet name, and the sync fixture copies the sheet script that `runtimes.mjs` imports (about 12 lines) | Low |
 | `plugins/pstack/models.json` | A `t3` block: default, strongest and panel as T3 targets | Low, since it is one new key |
-| Marketplace names, `README.md` | `t3-pstack` marketplace, install text. The plugin name stays `pstack`, so every `pstack:*` reference stays valid | Low |
+| Manifests, marketplaces, `README.md` | `t3-pstack` plugin and marketplace names, author, and install text, in every manifest including Copilot's, which the generator requires to share the Claude Code manifest's name | Low |
+| `hooks/session-start.sh`, `hooks/session-start.ps1`, `hooks/session-start-context.md` | The `claude` and `codex` arms read `t3-pstack-models.md`, and the context tells each session to read `t3-tools.md` and the sheet. t3-pstack does not support GitHub Copilot: the `copilot` arm is carried only to keep merges cheap, and since it wraps the same context file it would print the T3 mandate | Low |
 | `VERSION`, `CHANGES.md` | Own version line (see open question 4) | One mechanical conflict per merge |
 | Generated preambles in about 15 SKILL.md files | Stamped by the generator | On a conflict, take upstream's version and regenerate |
 

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { execFileSync, spawnSync } from "node:child_process";
 import {
   chmodSync,
@@ -37,6 +37,23 @@ afterEach(() => {
   for (const dir of fixtures.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
+// Bun's child_process reads the environment at startup unless `env` is passed,
+// so each spawn here passes process.env.
+const gitConfigDir = mkdtempSync(join(tmpdir(), "sync-gitconfig-"));
+const savedGitEnv = { GIT_CONFIG_GLOBAL: process.env.GIT_CONFIG_GLOBAL, GIT_CONFIG_NOSYSTEM: process.env.GIT_CONFIG_NOSYSTEM };
+beforeAll(() => {
+  writeFileSync(join(gitConfigDir, "gitconfig"), "");
+  process.env.GIT_CONFIG_GLOBAL = join(gitConfigDir, "gitconfig");
+  process.env.GIT_CONFIG_NOSYSTEM = "1";
+});
+afterAll(() => {
+  for (const [name, value] of Object.entries(savedGitEnv)) {
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
+  }
+  rmSync(gitConfigDir, { recursive: true, force: true });
+});
+
 function tree(files) {
   const dir = mkdtempSync(join(tmpdir(), "sync-fixture-"));
   fixtures.push(dir);
@@ -49,6 +66,15 @@ function tree(files) {
 
 function sync(overrides) {
   return syncComponent({ rules: RULES.substitutions, denylist: RULES.denylist, ...overrides });
+}
+
+function underUmask(mask, body) {
+  const saved = process.umask(mask);
+  try {
+    return body();
+  } finally {
+    process.umask(saved);
+  }
 }
 
 describe("applySubstitutions", () => {
@@ -385,6 +411,26 @@ describe("mergeFile", () => {
     const nul = (s) => Buffer.from(`${s}\0\n`);
     expect(() => mergeFile(nul("ours"), nul("base"), nul("theirs"))).toThrow("Command failed");
   });
+
+  test.each([
+    ["the repository", join(import.meta.dir, "..")],
+    ["outside any repository", tmpdir()],
+  ])("a conflict carries git's merge-style markers whatever the user's merge.conflictStyle, run from %s", (_, cwd) => {
+    const home = tree({ gitconfig: "[merge]\n\tconflictStyle = zdiff3\n" });
+    const sides = [base.replace("l3", "ours"), base, base.replace("l3", "theirs")].map((text) => `Buffer.from(${JSON.stringify(text)})`);
+    const script = [
+      `import { mergeFile } from ${JSON.stringify(join(import.meta.dir, "../tools/sync.mjs"))};`,
+      `process.stdout.write(mergeFile(${sides.join(", ")}).buffer);`,
+    ].join("\n");
+
+    const result = spawnSync(process.execPath, ["-e", script], {
+      cwd,
+      encoding: "utf8",
+      env: { ...process.env, GIT_CONFIG_GLOBAL: join(home, "gitconfig") },
+    });
+
+    expect(result.stdout).toBe("l1\nl2\n<<<<<<< local\nours\n=======\ntheirs\n>>>>>>> upstream\nl4\nl5\n");
+  });
 });
 
 describe("changedLines", () => {
@@ -481,10 +527,9 @@ describe("classify", () => {
 });
 
 describe("syncComponent", () => {
-  test("installed plugin text passes sync validation without changes", () => {
+  test("installed plugin text is free of the denylist", () => {
     const plugin = join(import.meta.dir, "../plugins/pstack");
     const report = sync({ oldDir: plugin, newDir: plugin, localDir: plugin, dryRun: true });
-    expect(report.written).toEqual([]);
     expect(report.hits).toEqual([]);
   });
 
@@ -648,6 +693,20 @@ describe("syncComponent", () => {
     sync({ oldDir: up, newDir: up, localDir: local, forks });
 
     expect(readFileSync(join(local, "gone.md"), "utf8")).toBe("a\n");
+  });
+
+  test("an upstream file the port deleted without excluding it fails a run at the pin instead of coming back", () => {
+    const up = tree({ "keep.md": "k\n", "gone.md": "g\n" });
+    const local = tree({ "keep.md": "k\n" });
+
+    const atPin = sync({ oldDir: up, newDir: up, localDir: local, atPin: true });
+
+    expect(atPin.written).toEqual([{ kind: "added", rel: "gone.md" }]);
+    expect(existsSync(join(local, "gone.md"))).toBe(false);
+
+    sync({ oldDir: up, newDir: up, localDir: local });
+
+    expect(readFileSync(join(local, "gone.md"), "utf8")).toBe("g\n");
   });
 
   test.each(
@@ -962,6 +1021,173 @@ describe("syncComponent", () => {
     for (const rel of ["d", "f"]) expect(lstatSync(join(local, rel)).isSymbolicLink()).toBe(true);
   });
 
+  // A filesystem that resolves each key to the entry spelled as its value, the
+  // way one that folds case or normalises Unicode does. It sits on the real
+  // one, so the rule runs wherever the suite does.
+  const aliasing = (heldAs) => (dir, name) => lstatSync(join(dir, heldAs[name] ?? name), { throwIfNoEntry: false });
+  const aliasesHere = (held, asked) => existsSync(join(tree({ [held]: "" }), asked));
+  const sameEntry = (asked) => `the same entry as upstream's ${asked} on this filesystem`;
+  const onAliasingFilesystems = (title, heldAs, body) => {
+    test(`${title} (a stand-in filesystem)`, () => body({ lookUp: aliasing(heldAs) }));
+    const here = Object.entries(heldAs).every(([asked, held]) => aliasesHere(held, asked));
+    test.skipIf(!here)(`${title} (this filesystem)`, () => body({}));
+  };
+
+  const NFC = "caf\u00e9.md";
+  const NFD = "cafe\u0301.md";
+  for (const [difference, held, asked] of [
+    ["case", "Foo.md", "foo.md"],
+    ["Unicode normalisation", NFD, NFC],
+    ["a sharp s", "strasse.md", "stra\u00dfe.md"],
+    ["a ligature", "file.md", "\ufb01le.md"],
+  ]) {
+    onAliasingFilesystems(`an upstream edit to a path the filesystem resolves to a port file whose name differs by ${difference} fails the run before any write`, { [asked]: held }, (filesystem) => {
+      const base = "l1\nl2\nl3\nl4\nl5\nl6\nl7\n";
+      const oldUp = tree({ [asked]: base, "sibling.md": "old\n" });
+      const newUp = tree({ [asked]: base.replace("l7", "l7 upstream"), "sibling.md": "new\n" });
+      const local = tree({ [held]: base.replace("l1", "l1 the port"), "sibling.md": "old\n" });
+
+      const report = sync({ oldDir: oldUp, newDir: newUp, localDir: local, ...filesystem });
+
+      expect(report.collisions).toEqual([{ rel: held, reason: sameEntry(asked) }]);
+      expect(readdirSync(local).sort()).toEqual([held, "sibling.md"].sort());
+      expect(readFileSync(join(local, held), "utf8")).toBe(base.replace("l1", "l1 the port"));
+      expect(readFileSync(join(local, "sibling.md"), "utf8")).toBe("old\n");
+    });
+
+    onAliasingFilesystems(`an upstream rename to a name the filesystem resolves to the old entry, differing by ${difference}, deletes nothing`, { [asked]: held }, (filesystem) => {
+      const oldUp = tree({ [held]: "body\n", "sibling.md": "old\n" });
+      const newUp = tree({ [asked]: "body\n", "sibling.md": "new\n" });
+      const local = tree({ [held]: "body\n", "sibling.md": "old\n" });
+
+      const report = sync({ oldDir: oldUp, newDir: newUp, localDir: local, ...filesystem });
+
+      expect(report.collisions).toEqual([{ rel: held, reason: sameEntry(asked) }]);
+      expect(readdirSync(local).sort()).toEqual([held, "sibling.md"].sort());
+      expect(readFileSync(join(local, "sibling.md"), "utf8")).toBe("old\n");
+    });
+  }
+
+  test.skipIf(aliasesHere("Foo.md", "foo.md"))("where the filesystem holds both spellings, an upstream rename that only changes case is carried out", () => {
+    const oldUp = tree({ "Foo.md": "body\n" });
+    const newUp = tree({ "foo.md": "body\n" });
+    const local = tree({ "Foo.md": "body\n" });
+
+    const report = sync({ oldDir: oldUp, newDir: newUp, localDir: local });
+
+    expect(report.collisions).toEqual([]);
+    expect(readdirSync(local)).toEqual(["foo.md"]);
+  });
+
+  onAliasingFilesystems("a new upstream file the filesystem resolves to a port path with no outcome fails the run before any write", { "kit.md": "Kit.md", "notes.md": "NOTES.md" }, (filesystem) => {
+    const oldUp = tree({ "a.md": "old a\n" });
+    const newUp = tree({ "a.md": "new a\n", "kit.md": "upstream\n", "notes.md": "upstream\n" });
+    const local = tree({ "a.md": "old a\n", "Kit.md": "another component's\n", "NOTES.md": "the port's own\n" });
+
+    const report = sync({ oldDir: oldUp, newDir: newUp, localDir: local, carriedElsewhere: ["Kit.md"], exclude: ["NOTES.md"], ...filesystem });
+
+    expect(report.collisions).toEqual([
+      { rel: "Kit.md", reason: sameEntry("kit.md") },
+      { rel: "NOTES.md", reason: sameEntry("notes.md") },
+    ]);
+    expect(readFileSync(join(local, "a.md"), "utf8")).toBe("old a\n");
+    expect(readFileSync(join(local, "Kit.md"), "utf8")).toBe("another component's\n");
+    expect(readFileSync(join(local, "NOTES.md"), "utf8")).toBe("the port's own\n");
+  });
+
+  test("a port file where upstream has a directory, or a port directory where upstream has a file, fails the run before any write", () => {
+    const oldUp = tree({ "a.md": "old a\n" });
+    const newUp = tree({ "a.md": "new a\n", "b/new.md": "n\n", c: "a file upstream\n" });
+    const local = tree({ "a.md": "old a\n", b: "a file in the port\n", "c/port.md": "p\n" });
+
+    const report = sync({ oldDir: oldUp, newDir: newUp, localDir: local });
+
+    expect(report.collisions).toEqual([
+      { rel: "b", reason: "a file where upstream has a directory" },
+      { rel: "c", reason: "a directory where upstream has a file" },
+    ]);
+    expect(report.written).toEqual([
+      { kind: "updated", rel: "a.md" },
+      { kind: "added", rel: "b/new.md" },
+      { kind: "added", rel: "c" },
+    ]);
+    expect(readFileSync(join(local, "a.md"), "utf8")).toBe("old a\n");
+    expect(readFileSync(join(local, "b"), "utf8")).toBe("a file in the port\n");
+    expect(readdirSync(join(local, "c"))).toEqual(["port.md"]);
+  });
+
+  test("an empty port directory where upstream has a file fails the run before any write", () => {
+    const oldUp = tree({ "a.md": "old a\n" });
+    const newUp = tree({ "a.md": "new a\n", c: "a file upstream\n" });
+    const local = tree({ "a.md": "old a\n" });
+    mkdirSync(join(local, "c"));
+
+    const report = sync({ oldDir: oldUp, newDir: newUp, localDir: local });
+
+    expect(report.collisions).toEqual([{ rel: "c", reason: "a directory where upstream has a file" }]);
+    expect(readFileSync(join(local, "a.md"), "utf8")).toBe("old a\n");
+  });
+
+  onAliasingFilesystems("an upstream directory the filesystem resolves to a port file fails the run before any write", { b: "B" }, (filesystem) => {
+    const oldUp = tree({ "a.md": "old a\n" });
+    const newUp = tree({ "a.md": "new a\n", "b/new.md": "n\n" });
+    const local = tree({ "a.md": "old a\n", B: "a file in the port\n" });
+
+    const report = sync({ oldDir: oldUp, newDir: newUp, localDir: local, ...filesystem });
+
+    expect(report.collisions).toEqual([{ rel: "B", reason: sameEntry("b") }]);
+    expect(readFileSync(join(local, "a.md"), "utf8")).toBe("old a\n");
+    expect(readFileSync(join(local, "B"), "utf8")).toBe("a file in the port\n");
+  });
+
+  onAliasingFilesystems("an upstream directory the filesystem resolves to a port directory spelled another way fails the run before any write", { scripts: "Scripts" }, (filesystem) => {
+    const oldUp = tree({ "kit/a.md": "old a\n" });
+    const newUp = tree({ "kit/a.md": "new a\n", "kit/scripts/y.sh": "upstream y\n", "kit/scripts/deep/z.sh": "upstream z\n" });
+    const local = tree({ "kit/a.md": "old a\n", "kit/Scripts/x.sh": "port x\n" });
+
+    const report = sync({ oldDir: oldUp, newDir: newUp, localDir: local, ...filesystem });
+
+    expect(report.collisions).toEqual([{ rel: "kit/Scripts", reason: sameEntry("kit/scripts") }]);
+    expect(readdirSync(join(local, "kit")).sort()).toEqual(["Scripts", "a.md"]);
+    expect(readdirSync(join(local, "kit/Scripts"))).toEqual(["x.sh"]);
+    expect(readFileSync(join(local, "kit/a.md"), "utf8")).toBe("old a\n");
+  });
+
+  test("an entry the filesystem finds and the listing cannot identify still fails the run before any write", () => {
+    const oldUp = tree({ "a.md": "old a\n" });
+    const newUp = tree({ "a.md": "new a\n", "new.md": "n\n" });
+    const local = tree({ "a.md": "old a\n" });
+
+    const report = sync({ oldDir: oldUp, newDir: newUp, localDir: local, lookUp: () => ({ ino: -1 }) });
+
+    expect(report.collisions).toEqual([{ rel: "new.md", reason: sameEntry("new.md") }]);
+    expect(readdirSync(local)).toEqual(["a.md"]);
+    expect(readFileSync(join(local, "a.md"), "utf8")).toBe("old a\n");
+  });
+
+  for (const [target, linkTo] of [
+    ["a directory", "dir"],
+    ["a file", "file.md"],
+    ["nothing", "missing"],
+  ]) {
+    onAliasingFilesystems(`an upstream directory the filesystem resolves to a port link to ${target} fails the run before any write`, { b: "B" }, (filesystem) => {
+      const outside = tree({ "dir/keep.md": "k\n", "file.md": "f\n" });
+      const oldUp = tree({ "a.md": "old a\n" });
+      const newUp = tree({ "a.md": "new a\n", "b/new.md": "n\n" });
+      const local = tree({ "a.md": "old a\n" });
+      symlinkSync(join(outside, linkTo), join(local, "B"));
+
+      const report = sync({ oldDir: oldUp, newDir: newUp, localDir: local, ...filesystem });
+
+      expect(report.collisions).toEqual([{ rel: "B", reason: sameEntry("b") }]);
+      expect(readFileSync(join(local, "a.md"), "utf8")).toBe("old a\n");
+      expect(lstatSync(join(local, "B")).isSymbolicLink()).toBe(true);
+      expect(readdirSync(outside).sort()).toEqual(["dir", "file.md"]);
+      expect(readdirSync(join(outside, "dir"))).toEqual(["keep.md"]);
+      expect(readFileSync(join(outside, "file.md"), "utf8")).toBe("f\n");
+    });
+  }
+
   test("a binary port copy under an upstream text edit blocks every write", () => {
     const oldUp = tree({ "doc.md": "a\n", "sibling.md": "old\n" });
     const newUp = tree({ "doc.md": "b\n", "sibling.md": "new\n" });
@@ -974,7 +1200,7 @@ describe("syncComponent", () => {
     expect(readFileSync(join(local, "sibling.md"), "utf8")).toBe("old\n");
   });
 
-  test("a written file takes upstream's mode, and a mode-only upstream change is written", () => {
+  test("a written file takes upstream's mode, and a mode-only upstream change is written", () => underUmask(0o022, () => {
     const oldUp = tree({ "same.sh": "echo\n", "forked.sh": "echo\n" });
     const newUp = tree({ "same.sh": "echo\n", "forked.sh": "echo\n", "added.sh": "echo\n" });
     const local = tree({ "same.sh": "echo\n", "forked.sh": "echo port\n" });
@@ -990,7 +1216,7 @@ describe("syncComponent", () => {
     ]);
     for (const rel of scripts) expect(statSync(join(local, rel)).mode & 0o777).toBe(0o755);
     expect(readFileSync(join(local, "forked.sh"), "utf8")).toBe("echo port\n");
-  });
+  }));
 
   test("a file upstream never touched is forked, not conflicted", () => {
     const body = "shared line\n";
@@ -1087,6 +1313,23 @@ describe("syncComponent", () => {
     expect(statSync(join(local, "run.sh")).mode & 0o777).toBe(0o755);
   });
 
+  test.each([
+    ["the port's copy is group-writable", 0o644, 0o664],
+    ["upstream's clone is group-writable", 0o664, 0o644],
+    ["the port's script is executable by its owner alone", 0o755, 0o700],
+  ])("a mode that differs only in bits git does not record is unchanged, not a mode fork: %s", (_, upstreamMode, portMode) => {
+    const up = tree({ "s.md": "same\n" });
+    const local = tree({ "s.md": "same\n" });
+    chmodSync(join(up, "s.md"), upstreamMode);
+    chmodSync(join(local, "s.md"), portMode);
+
+    const report = sync({ oldDir: up, newDir: up, localDir: local, forks: new Map(), atPin: true, dryRun: true });
+
+    expect(report.forked).toEqual([]);
+    expect(report.undeclared).toEqual([]);
+    expect(report.unchanged).toBe(1);
+  });
+
   test("a merge keeps a mode the port changed when upstream left the mode alone", () => {
     const oldUp = tree({ "run.sh": "echo\n" });
     const newUp = tree({ "run.sh": "echo upstream\n" });
@@ -1101,6 +1344,49 @@ describe("syncComponent", () => {
     expect(readFileSync(join(local, "run.sh"), "utf8")).toBe("echo upstream\n");
     expect(statSync(join(local, "run.sh")).mode & 0o777).toBe(0o755);
   });
+
+  test("a written file keeps the permission bits git does not record", () => {
+    const base = "l1\nl2\nl3\nl4\nl5\nl6\nl7\n";
+    const edited = base.replace("l7", "l7 upstream");
+    const portEdit = base.replace("l1", "l1 the port");
+    const oldUp = tree({ "merged.md": base, "merged.sh": base, "updated.md": base });
+    const newUp = tree({ "merged.md": edited, "merged.sh": edited, "updated.md": edited });
+    const local = tree({ "merged.md": portEdit, "merged.sh": portEdit, "updated.md": base });
+    for (const upstream of [oldUp, newUp]) chmodSync(join(upstream, "merged.sh"), 0o755);
+    chmodSync(join(local, "merged.md"), 0o600);
+    chmodSync(join(local, "merged.sh"), 0o700);
+    chmodSync(join(local, "updated.md"), 0o600);
+
+    const report = sync({ oldDir: oldUp, newDir: newUp, localDir: local });
+
+    expect(report.written).toEqual([
+      { kind: "merged", rel: "merged.md" },
+      { kind: "merged", rel: "merged.sh" },
+      { kind: "updated", rel: "updated.md" },
+    ]);
+    expect(statSync(join(local, "merged.md")).mode & 0o777).toBe(0o600);
+    expect(statSync(join(local, "merged.sh")).mode & 0o777).toBe(0o700);
+    expect(statSync(join(local, "updated.md")).mode & 0o777).toBe(0o600);
+    expect(readFileSync(join(local, "updated.md"), "utf8")).toBe(edited);
+  });
+
+  test.each([
+    ["a new executable file", null, 0o700],
+    ["an update that sets the executable bit", 0o600, 0o700],
+    ["an update that clears the executable bit", 0o700, 0o600],
+  ])("under a strict umask a write grants no permission the clone's copy lacks: %s", (_, oldMode, newMode) => underUmask(0o077, () => {
+    const held = oldMode === null ? {} : { "run.sh": "old\n" };
+    const oldUp = tree(held);
+    const newUp = tree({ "run.sh": "new\n" });
+    const local = tree(held);
+    chmodSync(join(newUp, "run.sh"), newMode);
+    if (oldMode !== null) for (const dir of [oldUp, local]) chmodSync(join(dir, "run.sh"), oldMode);
+
+    const report = sync({ oldDir: oldUp, newDir: newUp, localDir: local });
+
+    expect(report.written).toEqual([{ kind: oldMode === null ? "added" : "updated", rel: "run.sh" }]);
+    expect(statSync(join(local, "run.sh")).mode & 0o777).toBe(newMode);
+  }));
 
   test("forks are reported largest first by changed lines, and a mode-only fork is marked", () => {
     const body = { "a.md": "one\n", "b.md": "one\ntwo\nthree\n", "run.sh": "echo\n" };
@@ -1214,7 +1500,7 @@ describe("sync CLI", () => {
     const root = tree({});
     const upstream = join(root, "upstream");
     mkdirSync(join(upstream, "skills"), { recursive: true });
-    const git = (...args) => execFileSync("git", ["-C", upstream, ...args], { encoding: "utf8" }).trim();
+    const git = (...args) => execFileSync("git", ["-C", upstream, ...args], { encoding: "utf8", env: process.env }).trim();
     git("init", "-b", "main");
     const commit = (text) => {
       writeFileSync(join(upstream, "skills/s.md"), text);
@@ -1232,7 +1518,8 @@ describe("sync CLI", () => {
     symlinkSync(join(import.meta.dir, "../node_modules"), join(port, "node_modules"));
     cpSync(join(import.meta.dir, "../plugins/pstack/models.json"), join(port, "plugins/pstack/models.json"));
     mkdirSync(join(port, "plugins/pstack/skills"));
-    cpSync(join(import.meta.dir, "../plugins/pstack/skills/setup-pstack/scripts"), join(port, "plugins/pstack/skills/setup-pstack/scripts"), { recursive: true });
+    mkdirSync(join(port, "plugins/pstack/skills/setup-pstack/scripts"), { recursive: true });
+    cpSync(join(import.meta.dir, "../plugins/pstack/skills/setup-pstack/scripts/t3-sheet.mjs"), join(port, "plugins/pstack/skills/setup-pstack/scripts/t3-sheet.mjs"));
     writeFileSync(join(port, "plugins/pstack/skills/s.md"), localText);
     for (const runtime of RUNTIMES) {
       mkdirSync(join(port, runtime.tools, ".."), { recursive: true });
@@ -1344,6 +1631,42 @@ describe("sync CLI", () => {
     expect(local()).toBe("port\n");
   });
 
+  test("a path collision fails the dry run and the real run naming its path, and nothing is written", () => {
+    const { run, pin, oldSha, port } = cli({ oldText: "one\n", newText: "two\n", localText: "one\n" });
+    const skill = join(port, "plugins/pstack/skills/s.md");
+    rmSync(skill);
+    mkdirSync(skill);
+    writeFileSync(join(skill, "inner.md"), "the port's own\n");
+    const failure =
+      "FAIL: port paths the tree cannot hold next to upstream's; rename or delete each, then rerun:\n" +
+      "  plugins/pstack/skills/s.md (a directory where upstream has a file)\n";
+
+    for (const result of [run("--dry-run"), run()]) {
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain(failure);
+    }
+    expect(pin()).toBe(oldSha);
+    expect(readdirSync(skill)).toEqual(["inner.md"]);
+  });
+
+  test("a stray argument fails naming it above the usage line, and nothing is written or pinned", () => {
+    const { run, pin, local, oldSha } = cli({ oldText: "one\n", newText: "two\n", localText: "one\n" });
+    const usage = "usage: bun tools/sync.mjs <kit> <new-sha> [--dry-run]\n";
+
+    for (const [flags, named] of [
+      [["--dry"], 'unexpected argument: "--dry"\n'],
+      [["--dry-run=1"], 'unexpected argument: "--dry-run=1"\n'],
+      [["--dry-run", "extra", ""], 'unexpected argument: "extra"\nunexpected argument: ""\n'],
+    ]) {
+      const result = run(...flags);
+
+      expect(result.status).toBe(2);
+      expect(result.stderr).toContain(named + usage);
+    }
+    expect(pin()).toBe(oldSha);
+    expect(local()).toBe("one\n");
+  });
+
   test("a declaration whose path is no longer forked warns and passes on a sync to a new SHA", () => {
     const { run } = cli({ oldText: "one\n", newText: "one\n", localText: "one\n", forks: declareS("policy") });
 
@@ -1364,5 +1687,36 @@ describe("sync CLI", () => {
         "FAIL: tools/forks.json declares paths under kit that are not forked at the pinned SHA; delete each entry, then rerun:\n  plugins/pstack/skills/s.md is no longer forked (unchanged)\n",
       );
     }
+  });
+
+  test("an upstream file the port lacks fails a run at the pinned SHA naming it, and nothing is written", () => {
+    const { runAt, oldSha, port } = cli({ oldText: "one\n", newText: "one\n", localText: "one\n" });
+    const skill = join(port, "plugins/pstack/skills/s.md");
+    rmSync(skill);
+    const failure =
+      "FAIL: upstream files the port lacks at the pinned SHA; restore each or add it to exclude in tools/upstream.json, then rerun:\n" +
+      "  plugins/pstack/skills/s.md\n";
+
+    for (const result of [runAt(oldSha, "--dry-run"), runAt(oldSha)]) {
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain(failure);
+    }
+    expect(existsSync(skill)).toBe(false);
+  });
+
+  test.each([
+    ["an abbreviated pin and a full argument", 7, 40],
+    ["a full pin and an abbreviated argument", 40, 7],
+  ])("the pinned-SHA check resolves both commits, so %s still count as the pin", (_, pinLength, argLength) => {
+    const { runAt, oldSha, port } = cli({ oldText: "one\n", newText: "one\n", localText: "one\n", forks: declareS("policy") });
+    const upstreamJson = join(port, "tools/upstream.json");
+    const upstream = JSON.parse(readFileSync(upstreamJson, "utf8"));
+    upstream.components.kit.sha = oldSha.slice(0, pinLength);
+    writeFileSync(upstreamJson, JSON.stringify(upstream));
+
+    const result = runAt(oldSha.slice(0, argLength), "--dry-run");
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("FAIL: tools/forks.json declares paths under kit that are not forked at the pinned SHA");
   });
 });

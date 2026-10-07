@@ -46,6 +46,7 @@ export function fakePi() {
   const api = {
     registerTool: (tool) => tools.set(tool.name, tool),
     registerCommand: (name, options) => commands.set(name, options),
+    getCommands: () => [...commands.keys()].map((name) => ({ name, source: "extension" })),
     on(event, handler) {
       handlers.set(event, [...(handlers.get(event) ?? []), handler]);
       return () => {};
@@ -74,13 +75,17 @@ export function fakePi() {
   };
 }
 
-export function fakeCtx({ cwd, entries = [], model, mode = "tui", hasUI = false, ui, idle = true, pending = () => false } = {}) {
+export function fakeCtx({ cwd, entries = [], model = { provider: "anthropic", id: "parent-model" }, mode = "tui", hasUI = false, ui = { notify() {} }, idle = true, pending = () => false, auth = "configured" } = {}) {
   return {
     cwd,
     mode,
     hasUI,
     ui,
-    model: model === undefined ? { provider: "anthropic", id: "parent-model" } : model,
+    model,
+    modelRegistry: {
+      hasConfiguredAuth: () => auth === "configured",
+      getAvailableOfType: async () => (auth === "none" ? [] : [model]),
+    },
     isIdle: () => (typeof idle === "function" ? idle() : idle),
     hasPendingMessages: pending,
     sessionManager: { getSessionId: () => "parent-session", getEntries: () => entries },

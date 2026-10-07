@@ -225,7 +225,7 @@ describe("the models.json t3 block", () => {
 });
 
 describe("the T3 preamble", () => {
-  const [codex, t3] = ["Codex", "T3"].map((name) => RUNTIMES.find((r) => r.name === name));
+  const [codex, copilot, t3] = ["Codex", "GitHub Copilot", "T3"].map((name) => RUNTIMES.find((r) => r.name === name));
 
   test("replaces another runtime's lead line instead of stacking under it", () => {
     const text = `# Title\n\n${codex.preamble}\n\nBody.\n`;
@@ -237,8 +237,24 @@ describe("the T3 preamble", () => {
     expect(listed(codex).filter((skill) => !listed(t3).includes(skill))).toEqual([]);
   });
 
-  test("wins on a skill both mapping tables list", () => {
-    expect(loadLeadLines().get("plugins/pstack/skills/arena/SKILL.md")).toBe(t3.preamble);
-    expect(loadLeadLines().get("plugins/pstack/skills/automate-me/SKILL.md")).toBe(t3.preamble);
+  test("replaces the Codex preamble and keeps the Copilot one on a skill every table lists", () => {
+    expect(loadLeadLines().get("plugins/pstack/skills/arena/SKILL.md")).toEqual([copilot.preamble, t3.preamble]);
+    expect(loadLeadLines().get("plugins/pstack/skills/automate-me/SKILL.md")).toEqual([copilot.preamble, t3.preamble]);
+  });
+});
+
+describe("the T3 session-start context", () => {
+  const pluginRoot = join(root, "plugins/pstack");
+
+  test.each(["claude", "codex"])("the %s hook tells the session to route and dispatch through T3", (runtime) => {
+    const home = mkdtempSync(join(tmpdir(), "t3-session-"));
+    const result = spawnSync("sh", [join(pluginRoot, "hooks/session-start.sh"), runtime], {
+      encoding: "utf8",
+      env: { PATH: process.env.PATH, HOME: home, CLAUDE_PLUGIN_ROOT: pluginRoot, GIT_CONFIG_GLOBAL: "/dev/null" },
+    });
+    expect(result.status).toBe(0);
+    for (const phrase of ["t3-pstack:poteto-mode", "references/t3-tools.md", "t3-pstack-models.md", "delegate_task"]) {
+      expect(result.stdout).toContain(phrase);
+    }
   });
 });

@@ -26,11 +26,20 @@
 //     had edited (kept, and printed as now port-only once the pin moves)
 //   - a binary upstream or port copy differs all three ways -> the run fails
 //     naming it, since a binary cannot carry markers
+//   - a port file where upstream has a directory, a port directory where
+//     upstream has a file, or a port entry spelled another way that this
+//     filesystem finds for upstream's path, because it folds case or
+//     normalises Unicode -> the run fails naming each port path, since the
+//     write would land on that entry
 //   - upstream deleted it and local matches the derived OLD text and mode ->
 //     deleted
 //
-// A written file takes the new upstream file's mode, except that a merged or
-// conflicted file keeps the port's mode when upstream left the mode alone.
+// Modes compare as git records them, executable or not. A written file takes
+// the new upstream file's mode, except that a merged or conflicted file keeps
+// the port's when upstream left it alone. A write grants no permission that
+// the file's own bits or the umask withhold. A new file is created through the
+// umask. An existing file changes only its execute bits, and only when git's
+// mode has to change. They are set where the file is readable, or all cleared.
 //
 // Every effective text file, a conflict's marked bytes included, is
 // denylist-scanned; a hit fails the run with file, line, and the hint for that
@@ -41,15 +50,17 @@
 // can with conflicts: the markers are in the tree, and generate.mjs fails on
 // any marker line under plugins/pstack, so CI rejects an unresolved sync.
 // With --dry-run nothing is written and the pin stays; passing the pinned SHA
-// as <new-sha> under --dry-run prints the ownership map.
+// as <new-sha> under --dry-run prints the ownership map. At the pin an upstream
+// file the port lacks fails the run, since a sync to a new SHA would write it
+// back.
 
 import { execFileSync, spawnSync } from "node:child_process";
 import {
   chmodSync,
-  existsSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   unlinkSync,
@@ -185,14 +196,18 @@ const isBinary = (rel, raw) => BINARY.test(rel) || raw.includes(0) || !Buffer.fr
 // exits with the conflict count, capped at 127, so status 0 is a clean merge and
 // 1-127 is that many hunks. Git's own errors exit above 127 (-1 for "Cannot
 // merge binary files" reads as 255, a usage error as 129); those and a missing
-// git are errors, not conflicts, and rethrow.
+// git are errors, not conflicts, and rethrow. `--no-diff3` resets the conflict
+// style after git has read the user's merge.conflictStyle, so a diff3 or zdiff3
+// setting cannot add a `|||||||` base section. `-c merge.conflictStyle=merge`
+// does not hold outside a repository, where git 2.54 still applies the global
+// setting.
 export function mergeFile(ours, base, theirs) {
   const scratch = mkdtempSync(join(tmpdir(), "pstack-merge-"));
   try {
     const paths = { ours, base, theirs };
     for (const [name, buffer] of Object.entries(paths)) writeFileSync(join(scratch, name), buffer);
     const labels = ["-L", "local", "-L", "base", "-L", "upstream"];
-    const args = ["merge-file", "-p", ...labels, join(scratch, "ours"), join(scratch, "base"), join(scratch, "theirs")];
+    const args = ["merge-file", "-p", "--no-diff3", ...labels, join(scratch, "ours"), join(scratch, "base"), join(scratch, "theirs")];
     try {
       const merged = execFileSync("git", args, { stdio: ["ignore", "pipe", "inherit"] });
       return { clean: true, buffer: merged };
@@ -233,6 +248,8 @@ export function isExcluded(rel, exclude) {
     return rel === prefix || rel.startsWith(`${prefix}/`);
   });
 }
+
+const gitMode = (mode) => (mode & 0o100 ? 0o755 : 0o644);
 
 const lazyFile = (mode, load) => {
   let loaded;
@@ -285,13 +302,20 @@ export function classify({ old = null, new: next = null, local = null }) {
 // Outcomes that leave port edits on top of upstream's text or mode.
 const FORK_OUTCOMES = new Set(["forked", "mode-only", "merged", "conflicted"]);
 
+// What the filesystem finds at `name` in `dir`, a link itself and never its
+// target. Where the filesystem folds case or normalises Unicode, that can be
+// an entry `dir` lists under another spelling.
+const lstatIn = (dir, name) => lstatSync(join(dir, name), { throwIfNoEntry: false });
+
 // Compare old-upstream vs new-upstream vs local for one component tree.
 // `derive(rel, text)` turns substituted upstream text into the port's form;
 // the default is identity. `forks`, from parseForks, adds the registry check:
 // an undeclared fork lands in `undeclared` and blocks every write, and an entry
 // whose path is not forked lands in `stale`. A stale entry blocks every write
 // only when `atPin`: at a new SHA it is a fork upstream just absorbed, so the
-// sync goes ahead. Returns the report and, unless dryRun, applies it.
+// sync goes ahead. `lookUp` is the one question whose answer depends on how
+// the filesystem folds names, so a test can stand in for a filesystem that
+// folds. Returns the report and, unless dryRun, applies it.
 export function syncComponent({
   oldDir,
   newDir,
@@ -304,6 +328,7 @@ export function syncComponent({
   forks = null,
   atPin = false,
   dryRun = false,
+  lookUp = lstatIn,
 }) {
   const report = {
     written: [],
@@ -312,6 +337,7 @@ export function syncComponent({
     portOnly: [],
     conflicts: [],
     binaryConflicts: [],
+    collisions: [],
     undeclared: [],
     stale: [],
     unchanged: 0,
@@ -333,16 +359,18 @@ export function syncComponent({
     // Following a link would copy whatever it points at, even outside the
     // clone, into the port.
     if (stat.isSymbolicLink()) return { symlink: true };
-    return lazyFile(stat.mode & 0o777, () => portForm(rel, readFileSync(file)));
+    return lazyFile(gitMode(stat.mode), () => portForm(rel, readFileSync(file)));
   };
   const portCopy = (rel) => {
+    // The walk decides what exists. Where the filesystem folds case it answers
+    // for Foo.md when asked about foo.md, and anywhere it answers for a
+    // directory when asked about a file.
+    if (!localPaths.has(rel)) return null;
     const file = join(localDir, rel);
-    // existsSync follows links, so only the walk sees a dangling one.
-    if (!localPaths.has(rel) && !existsSync(file)) return null;
     const stat = lstatSync(file);
     // Writing through a link would change, or create, its target.
     if (stat.isSymbolicLink()) return { symlink: true };
-    return lazyFile(stat.mode & 0o777, () => {
+    return lazyFile(gitMode(stat.mode), () => {
       const bytes = readFileSync(file);
       return { bytes, binary: isBinary(rel, bytes) };
     });
@@ -370,6 +398,41 @@ export function syncComponent({
     const outcome = outcomeOf(rel);
     return outcome ? [{ rel, ...outcome }] : [];
   });
+
+  // A write reaches the tree by upstream's spelling, and the filesystem picks
+  // the entry. Where it folds case or normalises Unicode that can be one
+  // spelled another way, which the write would overwrite and a delete in the
+  // same run could then remove. So each part of a written path must be absent,
+  // or listed under exactly that spelling with the type the write needs. How a
+  // filesystem folds is its own business, so it is asked and never modelled. A
+  // deleted path needs no check, since it comes from the walk and every part
+  // of it is a listed name.
+  const blockerOf = (rel) => {
+    const parts = rel.split("/");
+    let dir = localDir;
+    for (const [i, part] of parts.entries()) {
+      const pathTo = (name) => [...parts.slice(0, i), name].join("/");
+      const entries = readdirSync(dir, { withFileTypes: true });
+      const entry = entries.find(({ name }) => name === part);
+      if (!entry) {
+        const found = lookUp(dir, part);
+        if (!found) return null;
+        const twin = entries.find(({ name }) => lstatSync(join(dir, name)).ino === found.ino);
+        return [pathTo(twin?.name ?? part), `the same entry as upstream's ${pathTo(part)} on this filesystem`];
+      }
+      const last = i === parts.length - 1;
+      if (last && entry.isDirectory()) return [pathTo(part), "a directory where upstream has a file"];
+      if (!last && !entry.isDirectory()) return [pathTo(part), "a file where upstream has a directory"];
+      dir = join(dir, part);
+    }
+    return null;
+  };
+  const collisions = new Map();
+  for (const { rel, write } of outcomes) {
+    const blocker = write && blockerOf(rel);
+    if (blocker) collisions.set(...blocker);
+  }
+  report.collisions = [...collisions].map(([rel, reason]) => ({ rel, reason })).sort((a, b) => a.rel.localeCompare(b.rel));
 
   for (const { rel, kind, write, kept, counts, changed, hunks } of outcomes) {
     const scanned = write?.bytes ?? kept;
@@ -401,13 +464,17 @@ export function syncComponent({
     }
   }
 
-  if (report.hits.length || report.binaryConflicts.length || report.undeclared.length || (atPin && report.stale.length) || dryRun) return report;
+  if (report.hits.length || report.binaryConflicts.length || report.collisions.length || report.undeclared.length || (atPin && (report.stale.length || report.written.length)) || dryRun) return report;
   for (const { rel, kind, write } of outcomes) {
     const localFile = join(localDir, rel);
     if (write) {
       mkdirSync(dirname(localFile), { recursive: true });
-      writeFileSync(localFile, write.bytes);
-      chmodSync(localFile, write.mode);
+      const held = lstatSync(localFile, { throwIfNoEntry: false });
+      writeFileSync(localFile, write.bytes, { mode: write.mode });
+      if (held && gitMode(held.mode) !== write.mode) {
+        const bits = held.mode & 0o777;
+        chmodSync(localFile, write.mode === 0o755 ? bits | ((bits & 0o444) >> 2) : bits & ~0o111);
+      }
     } else if (kind === "deleted") {
       unlinkSync(localFile);
     }
@@ -438,11 +505,12 @@ function pathsOtherComponentsCarry(clone, components, component) {
 function main() {
   const args = process.argv.slice(2);
   const dryRun = args.includes("--dry-run");
-  const [component, newSha] = args.filter((a) => a !== "--dry-run");
+  const [component, newSha, ...stray] = args.filter((a) => a !== "--dry-run");
   const upstreamPath = join(repo, "tools/upstream.json");
   const upstream = JSON.parse(readFileSync(upstreamPath, "utf8"));
   const spec = upstream.components[component];
-  if (!spec || !newSha?.match(/^[0-9a-f]{7,40}$/)) {
+  if (stray.length || !spec || !newSha?.match(/^[0-9a-f]{7,40}$/)) {
+    for (const arg of stray) console.error(`unexpected argument: ${JSON.stringify(arg)}`);
     console.error(`usage: bun tools/sync.mjs <${Object.keys(upstream.components).join("|")}> <new-sha> [--dry-run]`);
     process.exit(2);
   }
@@ -513,6 +581,10 @@ function main() {
       console.error(`replace each with upstream's version or add it to exclude in tools/upstream.json, then rerun:`);
       for (const rel of report.binaryConflicts) console.error(`  ${spec.localPath}/${rel}`);
     }
+    if (report.collisions.length) {
+      console.error(`\nFAIL: port paths the tree cannot hold next to upstream's; rename or delete each, then rerun:`);
+      for (const { rel, reason } of report.collisions) console.error(`  ${spec.localPath}/${rel} (${reason})`);
+    }
     if (report.hits.length) {
       console.error(`\nFAIL: Cursor-isms in synced files; add a substitution or rewrite by hand, then rerun:`);
       for (const h of report.hits) console.error(`  ${spec.localPath}/${h}`);
@@ -525,11 +597,15 @@ function main() {
         console.error(`warning: tools/forks.json declares ${spec.localPath}/${rel} under ${component}, but it ${reason}; delete the entry`);
       }
     }
+    if (atPin && report.written.length) {
+      console.error(`\nFAIL: upstream files the port lacks at the pinned SHA; restore each or add it to exclude in tools/upstream.json, then rerun:`);
+      for (const { rel } of report.written) console.error(`  ${spec.localPath}/${rel}`);
+    }
     if (report.undeclared.length) {
       console.error(`\nFAIL: forks with no entry under ${component} in tools/forks.json; declare each or restore upstream's form, then rerun:`);
       for (const rel of report.undeclared) console.error(`  ${spec.localPath}/${rel}`);
     }
-    if (report.binaryConflicts.length || report.hits.length || report.undeclared.length || (atPin && report.stale.length)) {
+    if (report.binaryConflicts.length || report.collisions.length || report.hits.length || report.undeclared.length || (atPin && (report.stale.length || report.written.length))) {
       process.exitCode = 1;
       return;
     }

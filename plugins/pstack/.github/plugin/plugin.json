@@ -1,0 +1,15 @@
+{
+  "name": "t3-pstack",
+  "displayName": "t3-pstack (no Copilot support)",
+  "version": "1.0.3",
+  "description": "t3-pstack runs only inside T3 Code; on GitHub Copilot install pstack@pstack-claude from michael-denyer/pstack-claude.",
+  "author": {
+    "name": "Christian Bager Bach Houmann",
+    "url": "https://github.com/chhoumann"
+  },
+  "homepage": "https://github.com/chhoumann/t3-pstack",
+  "repository": "https://github.com/chhoumann/t3-pstack",
+  "license": "MIT",
+  "keywords": ["pstack", "poteto-mode", "workflow", "skills", "subagents", "github-copilot"],
+  "hooks": "hooks/copilot-hooks.json"
+}
