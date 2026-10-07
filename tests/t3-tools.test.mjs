@@ -37,7 +37,7 @@ describe("the T3 mapping's watch-pr commands", () => {
   // --status-only is bounded too: a head with no checks yet retries for 12 minutes.
   test("bound every run under the tool cap", () => {
     const unbounded = commands(mapping).filter((command) => {
-      const seconds = Number(command.match(/--timeout[ =](\d+)/)?.[1]);
+      const seconds = Number(command.match(/--timeout[ =](\d+)(?=[\s`]|$)/)?.[1]);
       return !(seconds > 0 && seconds < 600);
     });
     expect(unbounded).toEqual([]);
