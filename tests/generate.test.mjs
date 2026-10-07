@@ -936,7 +936,7 @@ describe("plan, changes, apply", () => {
     writeFileSync(join(root, hooks), readFileSync(join(root, hooks), "utf8").replace("hooks/pre-tool-use.sh", "hooks/gone.sh"));
     expect(problems(root)).toEqual([expect.stringContaining("hooks/gone.sh does not exist")]);
     const text = readFileSync(join(root, manifest), "utf8");
-    writeFileSync(join(root, manifest), text.replace('"name": "pstack"', '"name": "other"'));
+    writeFileSync(join(root, manifest), text.replace('"name": "t3-pstack"', '"name": "other"'));
     expect(problems(root)).toEqual([
       expect.stringContaining(`${manifest}: name "other"`),
       expect.stringContaining("hooks/gone.sh does not exist"),

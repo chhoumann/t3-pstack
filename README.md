@@ -104,8 +104,6 @@ pstack has no server or telemetry. Anything its skills ask your agent to read, i
 
 Thanks for helping make this port better. Bug reports, documentation fixes, and runtime improvements are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the checks and where your change belongs. Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
 
-To support maintenance of this port, [buy the maintainer a coffee](https://buymeacoffee.com/codenyer).
-
 ## License
 
 t3-pstack is [MIT-licensed](LICENSE). Its T3 modifications and additions are © 2026 Christian Bager Bach Houmann. It builds on:

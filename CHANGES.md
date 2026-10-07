@@ -2,6 +2,15 @@
 
 This file is the release changelog, with one `## <version> - <title>` entry per release, newest first. The Cursor-to-Claude rewrite rules live in [`tools/substitutions.json`](tools/substitutions.json), and the [sync boundary](CONTRIBUTING.md#the-sync-boundary) in `CONTRIBUTING.md` defines how a change to upstream's skill content is declared.
 
+## 1.0.3 - merge pstack-claude 0.9.74
+
+t3-pstack 1.0.3 merges pstack-claude 0.9.70 through 0.9.74 (upstream commit `552b1c8`), which tracks pstack 0.15.13 (cursor/plugins `2cbf585`). The entries below this one describe what came in. Model defaults are unchanged.
+
+- `/poteto-help` gets a row in `t3-tools.md`'s Per-skill notes: its model and routing check reads `t3-pstack-models.md`, setup is `/t3-pstack:setup-pstack`, and install and public-copy links point at `chhoumann/t3-pstack`.
+- The GitHub Copilot runtime comes in as upstream ships it. Its manifest takes the `t3-pstack` name, because the generator requires it to match the Claude Code manifest. The `claude` and `codex` arms of `session-start.sh` keep reading `t3-pstack-models.md`, so the T3 session-start context is unchanged on both hosts.
+- With upstream's ordered lead lines, the T3 row now `displaces` Codex: its preamble replaces the Codex one, as before, and follows the Copilot one. A Codex prompt stub still skips the `codex-tools.md` pointer on a skill with the T3 preamble, and stamping drops any generator-owned lead line a file no longer owns.
+- The Buy Me a Coffee funding file and README badge are dropped, since they fund pstack-claude's maintainer. The License section keeps the credit.
+
 ## 1.0.2 - an arena judge never scores its own candidate
 
 A live architect run used GPT-6-Astra as both a runner and the cross-judge, and the judge picked Astra's own design. The rule only required the judge's family to differ from the parent thread's.
