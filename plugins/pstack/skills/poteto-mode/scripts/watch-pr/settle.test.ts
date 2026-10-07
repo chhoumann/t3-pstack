@@ -243,7 +243,7 @@ describe("review settle window", () => {
       reason: { kind: "review-settling", heldBy: "activity", endsAt: at(360) },
     });
     expect(renderPretty(verdict)).toBe(
-      `TIMEOUT: review activity has not settled (recent comments or reviews); can end in 210s, at ${at(360)}\n`
+      `TIMEOUT: review activity has not settled (quiet window since the push, opening, or last activity); can end in 210s, at ${at(360)}\n`
     );
   });
 });

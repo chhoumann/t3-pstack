@@ -362,4 +362,4 @@ export function settleCell(row: T.PrSnapshot): string {
 // A TIMEOUT carries the reason from the last read, so the time left is
 // counted from the verdict's own observedAt.
 export const settleText = (reason: SettleWait, observedAt: string): string =>
-  `review activity has not settled (${reason.heldBy === "eyes" ? "an eyes reaction is on the PR" : "recent comments or reviews"}); can end in ${Math.max(0, Math.ceil(seconds(reason.endsAt) - seconds(observedAt)))}s, at ${reason.endsAt}`;
+  `review activity has not settled (${reason.heldBy === "eyes" ? "an eyes reaction is on the PR" : "quiet window since the push, opening, or last activity"}); can end in ${Math.max(0, Math.ceil(seconds(reason.endsAt) - seconds(observedAt)))}s, at ${reason.endsAt}`;
