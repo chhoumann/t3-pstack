@@ -2,6 +2,14 @@
 
 This file is the release changelog, with one `## <version> - <title>` entry per release, newest first. The Cursor-to-Claude rewrite rules live in [`tools/substitutions.json`](tools/substitutions.json), and the [sync boundary](CONTRIBUTING.md#the-sync-boundary) in `CONTRIBUTING.md` defines how a change to upstream's skill content is declared.
 
+## 1.0.6 - a bounded review loop with a verifier
+
+An audit of five days of t3-pstack delegation, about $2.6k at API prices, found roughly 40% of it wasted, mostly in how implement, review, and fix loops ran rather than in model choice. Nit cascades ran on inputs that cannot occur, fix rounds repaired earlier fixes, the full panel re-reviewed small fix diffs, and some review seats added no unique accepted finding. Verifiers that ran the real artifact after each fix returned the most per dollar.
+
+- `t3-tools.md` adds a review loop for Bug fix, Feature, and Refactoring. Only findings the lead puts under interrogate's Act on block, including `warning` correctness findings; accepted nits are batched into one final run or dropped, and each dismissal states its reason. Round 1 reviews the whole change with the `interrogate reviewers` panel, and later rounds run the same panel on the fix diff only. After every fix round a `feature, refactoring` verifier runs the real artifact and reports `pass`, `fail`, or `could not run`; `fail` blocks, and `could not run` goes to the user. After three fix rounds the lead stops and reports, and the user decides. Each rule answers a pattern the audit measured across several threads; rules drawn from a single incident were left out.
+- A research delegate that no role names, such as an inventory, a web lookup, a transcript read, or extraction from a video or a document, runs on the `how explorer` entry.
+- `tests/t3-tools.test.mjs` checks that every role `t3-tools.md` dispatches to is one `models.json` declares, since that file is synced from upstream and a merge can rename a role.
+
 ## 1.0.5 - watch-pr holds READY until review activity settles
 
 An audit of agent babysitting history found that the most common failure, about 121 of 227 flaw instances, was declaring a PR ready once CI turned green but before review bots such as Codex, CodeRabbit, Devin, or Bugbot had posted. `watch-pr` knew only Bugbot.
