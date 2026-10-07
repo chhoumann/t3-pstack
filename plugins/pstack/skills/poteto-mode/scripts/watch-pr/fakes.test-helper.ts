@@ -11,6 +11,7 @@ import type {
   RollupPage,
 } from "./types.ts";
 import { parsePullRequest } from "./github.ts";
+import type { ReviewActivity } from "./settle.ts";
 import { parsePrNumber } from "./types.ts";
 
 export interface FakeReaderOptions {
@@ -24,6 +25,7 @@ export interface FakeReaderOptions {
   readonly defaultBranch?: string;
   readonly origin?: Repository | null;
   readonly current?: PrContext;
+  readonly reviewActivity?: ReviewActivity;
 }
 
 export function passingCheck(name = "ci"): Check {
@@ -137,6 +139,19 @@ export function fakeReader(
     async commitRollups() {
       calls.push("commitRollups");
       return options.commitRollups ?? [{ oid: "head", state: "SUCCESS" }];
+    },
+    async reviewActivity() {
+      calls.push("reviewActivity");
+      return (
+        options.reviewActivity ?? {
+          authorLogin: "author",
+          viewerLogin: "viewer",
+          openedAt: "2026-01-01T00:00:00Z",
+          readyAt: null,
+          headPushedAt: "2026-01-01T00:00:00Z",
+          items: [],
+        }
+      );
     },
   };
 }

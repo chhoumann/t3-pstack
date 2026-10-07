@@ -1,4 +1,5 @@
 import type { LandingRevision } from "./landing.ts";
+import type { ReviewActivity, ReviewSettle, SettleWait } from "./settle.ts";
 declare const prNumberBrand: unique symbol;
 export type PrNumber = number & { readonly [prNumberBrand]: "PrNumber" };
 export type NonEmpty<T> = readonly [T, ...T[]];
@@ -186,6 +187,7 @@ export type PrSnapshot =
       readonly threads: readonly ReviewThread[];
       readonly ci: CiState;
       readonly reviewAutomationRunning: boolean;
+      readonly settle: ReviewSettle;
     };
 export interface ReadyPr {
   readonly kind: "ready-pr";
@@ -283,7 +285,8 @@ export type WaitReason =
       readonly pending: NonEmpty<PendingCheck>;
     }
   | { readonly kind: "checks-unreported" }
-  | { readonly kind: "mergeability-unknown" };
+  | { readonly kind: "mergeability-unknown" }
+  | SettleWait;
 /**
  * `frontier` names the lowest unmerged PR that is actually waiting, and
  * `reason` carries that PR's checks only. Pooling every row's pending under the
@@ -445,6 +448,10 @@ export interface GitHubReader {
   ): Promise<RollupPage>;
   reviewThreads(context: PrContext): Promise<readonly ReviewThread[]>;
   commitRollups(context: PrContext): Promise<readonly CommitRollup[]>;
+  reviewActivity(
+    context: PrContext,
+    headRefOid: string
+  ): Promise<ReviewActivity>;
 }
 export interface PollingOptions {
   readonly interval: number;
@@ -452,4 +459,6 @@ export interface PollingOptions {
   readonly timeout: number;
   readonly maxQueryErrors: number;
   readonly allowDraft: boolean;
+  /** Quiet seconds of review activity a head needs before READY; 0 disables. */
+  readonly settle: number;
 }

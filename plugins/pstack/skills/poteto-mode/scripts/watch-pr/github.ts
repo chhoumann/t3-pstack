@@ -1,6 +1,7 @@
 import { parseLandingRevision } from "./landing.ts";
 import { spawn } from "node:child_process";
 import { DeadlineExceeded, type WatchDeadline } from "./deadline.ts";
+import { readReviewActivity, type ReviewActivity } from "./settle.ts";
 import type * as T from "./types.ts";
 import { nonEmpty, parsePrNumber } from "./types.ts";
 export const REVIEW_THREADS_QUERY = `query ReviewThreads($owner: String!, $repo: String!, $pr: Int!, $after: String) {
@@ -23,7 +24,6 @@ export const PR_COMMIT_STATUS_QUERY =
   "\nquery PrCommitStatuses($owner: String!, $repo: String!, $pr: Int!) {\n  repository(owner: $owner, name: $repo) {\n    pullRequest(number: $pr) {\n      commits(last: 50) {\n        nodes {\n          commit {\n            oid\n            statusCheckRollup {\n              state\n            }\n          }\n        }\n      }\n    }\n  }\n}\n";
 export const PR_CHECK_ROLLUP_QUERY =
   "\nquery PrCheckRollup($owner: String!, $repo: String!, $pr: Int!, $after: String) {\n  repository(owner: $owner, name: $repo) {\n    pullRequest(number: $pr) {\n      commits(last: 1) {\n        nodes {\n          commit {\n            statusCheckRollup {\n              contexts(first: 100, after: $after) {\n                pageInfo {\n                  hasNextPage\n                  endCursor\n                }\n                nodes {\n                  __typename\n                  ... on CheckRun {\n                    name\n                    status\n                    conclusion\n                    detailsUrl\n                  }\n                  ... on StatusContext {\n                    context\n                    state\n                    targetUrl\n                  }\n                }\n              }\n            }\n          }\n        }\n      }\n    }\n  }\n}\n";
-
 interface CommandResult {
   readonly code: number;
   readonly stdout: string;
@@ -740,6 +740,16 @@ export class GhGitHubReader implements T.GitHubReader {
               ),
       };
     });
+  }
+  reviewActivity(
+    context: T.PrContext,
+    headRefOid: string
+  ): Promise<ReviewActivity> {
+    return readReviewActivity(
+      (argv) => this.runJson(argv),
+      context,
+      headRefOid
+    );
   }
 }
 
