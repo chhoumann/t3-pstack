@@ -71,12 +71,19 @@ for (const [form, text, artifacts, unregistered, names] of [
   ['an unregistered link', '[Q](q.md) and [O](other.md)\n', ['q.md'], ['other.md'], '[O](other.md)'],
   ['a reference link', '[Q][q]\n\n[q]: q.md\n', ['q.md'], [], 'q.md'],
   ['nested brackets in the link text', '[see [the] list](q.md)\n', ['q.md'], [], 'q.md'],
+  ['a drive-letter path that does not resolve', '[Q](q.md) and [W](C:/w.md)\n', ['q.md'], [], '[W](C:/w.md)'],
 ]) test(`rejects ${form} by naming it and stating the documented link rule`, () => fixture(({ run }) => {
   const result = publishNote(run, text, artifacts, unregistered);
   assert.equal(result.status, 1);
   assert.ok(result.value.detail.includes(names), result.value.detail);
   const rule = result.value.detail.slice(result.value.detail.indexOf('Link each local file'));
   assert.ok(rule.startsWith('Link each local file') && storage.includes(rule), result.value.detail);
+}));
+
+test('publishes a note that also links URLs and an anchor', () => fixture(({ run }) => {
+  const text = '[Q](q.md), [site](https://example.com/a), [feed](ws://example.com/b) and [top](#top)\n';
+  const published = publishNote(run, text, ['q.md']);
+  assert.equal(published.status, 0, published.value.detail);
 }));
 
 test('ignores links inside code spans and fenced code blocks', () => fixture(({ run }) => {

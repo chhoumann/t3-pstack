@@ -225,7 +225,7 @@ describe("the models.json t3 block", () => {
 });
 
 describe("the T3 preamble", () => {
-  const [codex, t3] = ["Codex", "T3"].map((name) => RUNTIMES.find((r) => r.name === name));
+  const [codex, copilot, t3] = ["Codex", "GitHub Copilot", "T3"].map((name) => RUNTIMES.find((r) => r.name === name));
 
   test("replaces another runtime's lead line instead of stacking under it", () => {
     const text = `# Title\n\n${codex.preamble}\n\nBody.\n`;
@@ -237,8 +237,8 @@ describe("the T3 preamble", () => {
     expect(listed(codex).filter((skill) => !listed(t3).includes(skill))).toEqual([]);
   });
 
-  test("wins on a skill both mapping tables list", () => {
-    expect(loadLeadLines().get("plugins/pstack/skills/arena/SKILL.md")).toBe(t3.preamble);
-    expect(loadLeadLines().get("plugins/pstack/skills/automate-me/SKILL.md")).toBe(t3.preamble);
+  test("replaces the Codex preamble and keeps the Copilot one on a skill every table lists", () => {
+    expect(loadLeadLines().get("plugins/pstack/skills/arena/SKILL.md")).toEqual([copilot.preamble, t3.preamble]);
+    expect(loadLeadLines().get("plugins/pstack/skills/automate-me/SKILL.md")).toEqual([copilot.preamble, t3.preamble]);
   });
 });

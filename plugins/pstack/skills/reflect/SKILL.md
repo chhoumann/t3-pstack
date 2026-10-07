@@ -5,6 +5,8 @@ description: Spawn three parallel review subagents over the active transcript, s
 
 # Reflect
 
+On GitHub Copilot, read the [platform mapping](../poteto-mode/references/copilot-tools.md), including its per-skill notes, before following this skill.
+
 On T3, read the [platform mapping](../poteto-mode/references/t3-tools.md), including its per-skill notes, before following this skill.
 
 Mine the current conversation for durable learnings, then route them into skill edits.

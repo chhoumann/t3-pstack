@@ -2,7 +2,7 @@
 // its lifecycle, how its end is classified, its output, and stopping it.
 import { describe, expect, test } from "bun:test";
 import { readFileSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 
 import { alive, flag, listAgents, resultText, sleep, useWorld, waitFor } from "./harness.mjs";
 
@@ -20,6 +20,8 @@ describe("agent tool", () => {
     expect(resultText(result)).not.toContain("draft");
     expect(result.details.status).toBe("completed");
     expect(inv.argv).toEqual([
+      "--extension", join(w.settings.pluginRoot, "pi", "index.ts"),
+      "--skill", join(w.settings.pluginRoot, "skills"),
       "--mode", "rpc",
       "--session-id", flag(inv, "--session-id"),
       "--session-dir", join(w.agentDir, "pstack", "parent-session", "agents"),
@@ -191,7 +193,8 @@ describe("agent tool", () => {
     await pi.call("agent", { description: "big", prompt: "x", run_in_background: true }, ctx);
     await waitFor(() => pi.messages.length === 1);
     const { content, details } = pi.messages[0].message;
-    expect(details.outputFile).toBe(join(w.agentDir, "pstack", "parent-session", "agents", `${details.agentId}.out.md`));
+    expect(dirname(details.outputFile)).toBe(join(w.agentDir, "pstack", "parent-session", "agents"));
+    expect(basename(details.outputFile)).toMatch(new RegExp(`^${details.agentId}\\.\\d+\\.out\\.md$`));
     expect(content).toContain(`full output: ${details.outputFile}`);
     expect(Buffer.byteLength(content)).toBeLessThan(51 * 1024);
     expect(content).not.toContain("�");
@@ -207,6 +210,18 @@ describe("agent tool", () => {
     expect(last.status).toBe("completed");
     expect(Buffer.byteLength(last.finalText)).toBeLessThanOrEqual(50 * 1024);
     expect(readFileSync(last.outputFile, "utf8")).toBe(big);
+  });
+
+  test("a resumed run over 50 KB keeps its full output in its own file, so the file an earlier notice names still holds that run's output", async () => {
+    const { pi, ctx } = setup({ script: { default: [{ reply: `RUN:\${prompt} ${"x".repeat(60 * 1024)}` }] } });
+    await pi.call("agent", { description: "big", prompt: "first", run_in_background: true }, ctx);
+    await waitFor(() => pi.messages.length === 1);
+    await pi.call("send_message", { to: "big", message: "second" }, ctx);
+    await waitFor(() => pi.messages.length === 2);
+    const [first, second] = pi.messages.map((m) => m.message.details.outputFile);
+    expect(second).not.toBe(first);
+    expect(readFileSync(first, "utf8").slice(0, 10)).toBe("RUN:first ");
+    expect(readFileSync(second, "utf8").slice(0, 11)).toBe("RUN:second ");
   });
 
   test("an agent whose oversized output cannot be saved still ends, reports once, and can be stopped and messaged", async () => {
@@ -257,6 +272,21 @@ describe("stop_agent", () => {
     expect(alive(w.invocations()[0].pid)).toBe(false);
     expect(w.logged("sigterm-ignored")).not.toEqual([]);
     expect(Date.now() - started).toBeLessThan(3000);
+  });
+
+  test("sends one SIGTERM and waits the whole kill grace before SIGKILL, even when the exit grace is shorter", async () => {
+    const killGraceMs = 700;
+    const { w, pi, ctx } = setup({
+      script: { default: [{ ignoreSigterm: true }, { mute: true }, { sleep: 30000 }] },
+      settings: { killGraceMs, exitGraceMs: 200 },
+    });
+    const { details } = await pi.call("agent", { description: "stubborn", prompt: "x", run_in_background: true }, ctx);
+    await w.until("ignoring-sigterm");
+    const started = Date.now();
+    await pi.call("stop_agent", { id: details.agentId }, ctx);
+    expect(Date.now() - started).toBeGreaterThanOrEqual(killGraceMs - 50);
+    expect(alive(w.invocations()[0].pid)).toBe(false);
+    expect(w.logged("sigterm-ignored")).toHaveLength(1);
   });
 
   test("a stop returns once the child has exited, without waiting out the kill grace for a group member that ignores SIGTERM", async () => {
