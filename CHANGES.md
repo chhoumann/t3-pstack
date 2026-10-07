@@ -2,6 +2,19 @@
 
 This file is the release changelog, with one `## <version> - <title>` entry per release, newest first. The Cursor-to-Claude rewrite rules live in [`tools/substitutions.json`](tools/substitutions.json), and the [sync boundary](CONTRIBUTING.md#the-sync-boundary) in `CONTRIBUTING.md` defines how a change to upstream's skill content is declared.
 
+## 1.0.4 - T3 waits on PRs, the watcher decides
+
+`t3-tools.md` adopts T3 Code's PR watching, thread state, and server-browser tools as of T3 server `0.0.46-nightly.20261007.2761`.
+
+- Babysit in `drive` and `background` modes arms `watch_pull_request` once and takes each verdict from the bare `watch-pr --pr <n> --timeout 300` after every wake and push wave, in place of `--status-only`. A babysit on a repository with no CI stalled: `--status-only` reports `checks-unreported` forever there, and T3 never wakes because no check ever finishes. The bare watcher confirms `ci-none` after 60 seconds and also settles unknown mergeability and `behind-base`, which T3 never wakes on. "Rearm after each push wave" is gone, because the watch survives pushes and a second call keeps the existing one. `check` mode keeps `--status-only`.
+- In autopilot and orchestrate, each PR owner thread watches its own PR and the coordinator no longer does, so it stops taking a turn for every CI event of every owner. Each audit tick reads owners with `t3_thread_list` and `t3_pending_request_list`, answers or parks a pending question, and stops a stuck owner with `t3_thread_interrupt` before replacing it.
+- Shipping step 9 keeps `watch-pr --queued-stack`, because T3's watch does not wake on a merge, `behind-base`, or merge-queue state.
+- A `delegate_task` child cannot call `watch_pull_request`, so a child that opens a PR returns its URL for the parent to link and watch, and waits on CI with `gh pr checks <pr> --watch` only when its own work needs the result.
+- Transcript reads for recall, reflect, and automate-me are bounded with `maxCharsPerItem` and paged, and search runs once per project when work spans projects, because `t3_thread_search` covers one project.
+- Web evidence acts through `aria-ref` locators from the latest snapshot and the new `preview_hover`, `preview_select`, `preview_drag`, `preview_upload`, and `preview_dialog`. A child's verifier lane keeps its own `tabId`, because server tabs are isolated per agent session.
+- A test fails when the watcher stops declaring a `watch-pr` flag that `t3-tools.md` names, since an upstream merge can rename one.
+- `.claude/worktrees/` is ignored.
+
 ## 1.0.3 - merge pstack-claude 0.9.74
 
 t3-pstack 1.0.3 merges pstack-claude 0.9.70 through 0.9.74 (upstream commit `552b1c8`), which tracks pstack 0.15.13 (cursor/plugins `2cbf585`). The entries below this one describe what came in. Model defaults are unchanged.

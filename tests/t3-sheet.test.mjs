@@ -258,3 +258,17 @@ describe("the T3 session-start context", () => {
     }
   });
 });
+
+describe("the T3 mapping's watch-pr commands", () => {
+  // t3-tools.md is port-only, but the watcher it hands agents is synced from
+  // upstream, so a merge can rename a flag the mapping still names.
+  test("every watch-pr flag the mapping names is one the watcher declares", () => {
+    const mapping = readFileSync(join(root, "plugins/pstack/skills/poteto-mode/references/t3-tools.md"), "utf8");
+    const cli = readFileSync(join(root, "plugins/pstack/skills/poteto-mode/scripts/watch-pr/cli.ts"), "utf8");
+    const declared = new Set([...cli.matchAll(/"(--[a-z-]+)[ "]/g)].map((m) => m[1]));
+    const spans = [...mapping.matchAll(/`(watch-pr [^`]*|--[^`]*)`/g)].map((m) => m[1]);
+    const named = new Set(spans.flatMap((span) => span.match(/--[a-z-]+/g)));
+    expect(named).toContain("--timeout");
+    expect([...named].filter((flag) => !declared.has(flag))).toEqual([]);
+  });
+});
