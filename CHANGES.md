@@ -2,6 +2,26 @@
 
 This file is the release changelog, with one `## <version> - <title>` entry per release, newest first. The Cursor-to-Claude rewrite rules live in [`tools/substitutions.json`](tools/substitutions.json), and the [sync boundary](CONTRIBUTING.md#the-sync-boundary) in `CONTRIBUTING.md` defines how a change to upstream's skill content is declared.
 
+## 1.0.4 - T3 waits on PRs, the watcher decides
+
+`t3-tools.md` adopts T3 Code's PR watching, thread state, and server-browser tools as of T3 server `0.0.46-nightly.20261007.2761`.
+
+- Babysit loops the watcher inside the turn, in place of upstream's `/loop`, and arms T3's `watch_pull_request` only to wait for a human review, which wakes the thread when another account reviews. In `drive`, one turn handles the PR's existing review threads, then runs `watch-pr --pr <n> --timeout 540` again on every `TIMEOUT` and on every `status-query` exit 7 whose failure is retryable, and works each blocker per the playbook. It stops on `READY`, a gate that needs a human, a non-retryable exit 7, a verdict unchanged for two hours, or three hours in total. A user Stop interrupts the turn, and nothing outlives it.
+- The ten-minute `schedule_task` backstop from an earlier draft of this release is gone, because review found that, as persistent state outside the conversation, it survived a user Stop and resumed babysitting, kept the old stack bottom after that PR merged, could fire during a running turn or be created twice, and needed its own key for "unchanged for two hours".
+- A stack `READY` that covers only merged PRs while open layers remain is not done, because the watcher sees only its seed once that PR merges. `drive` seeds it again with the lowest open PR. A `ci-none` `READY` in a repository with workflow files is final only after two consecutive runs on the same head.
+- `check` runs `watch-pr --pr <n> --status-only --timeout 120 --max-query-errors 2`. A head with no checks yet, in a repository where an earlier commit reported some, is a retryable read failure, and the default five-error budget backed off for 12 minutes, past the 600-second tool cap. A `checks-unavailable` failure or a `ci-unreported` row is reported as no checks on this head yet, not as no CI.
+- Shipping step 9 loops `watch-pr --queued-stack --stack-prs <bottom> --timeout 540` inside the shipping turn until `COMPLETE`, a blocker, or a human gate, with each `TIMEOUT` as a wakeup for its `ship-pr inspect` check, under the same three-hour cap. It never uses `watch_pull_request`, which does not wake on a merge, `behind-base`, or merge-queue state.
+- A human-review wait (`review-required`, or `changes-requested` once its threads are handled) unsettles a settled thread, arms the watch on every unmerged layer, ends the turn, and is exempt from the time caps because the idle thread costs nothing. The hand-off says that a merge ends the wait without a wake. Shipping allows the watch for this one gate, since a rebase can dismiss an approval. A retryable `status-query` exit 7 waits 60 seconds before the next run, because a failed `--stack` discovery returns at once.
+- A `delegate_task` child that must wait on CI loops the bounded watcher instead of an unbounded `gh pr checks --watch`.
+- Autopilot and orchestrate keep 1.0.3's text. Owner-health checks on the audit tick are deferred until they can be designed from a real autopilot run: `t3_thread_interrupt` does not stop an idle owner or end its watch, and an owner waiting on CI looks the same as a dead one.
+- A `delegate_task` child cannot call `watch_pull_request`, so a child that opens a PR returns its URL for the parent to link and watch, and waits on CI with `gh pr checks <pr> --watch` only when its own work needs the result.
+- Transcript reads for recall, reflect, and automate-me are bounded with `maxCharsPerItem` and paged, and search runs once per project when work spans projects, because `t3_thread_search` covers one project.
+- Web evidence acts through `aria-ref` locators from the latest snapshot and the new `preview_hover`, `preview_select`, `preview_drag`, `preview_upload`, and `preview_dialog`. A child's verifier lane keeps its own `tabId`, because server tabs are isolated per agent session.
+- `tests/t3-tools.test.mjs` finds every `watch-pr` command in a backticked span of `t3-tools.md`, after any path or shell prefix. It checks each flag against the options `parseArgs` declares in the watcher's `cli.ts`, since an upstream merge can rename one, and that every command, `--status-only` included, carries a `--timeout` under the 600-second tool cap.
+- `.claude/worktrees/` is ignored.
+
+Not yet tried live: `watch_pull_request` on a real PR, `watch-pr` on a repository with no CI, and the `device_*` tools.
+
 ## 1.0.3 - merge pstack-claude 0.9.74
 
 t3-pstack 1.0.3 merges pstack-claude 0.9.70 through 0.9.74 (upstream commit `552b1c8`), which tracks pstack 0.15.13 (cursor/plugins `2cbf585`). The entries below this one describe what came in. Model defaults are unchanged.
