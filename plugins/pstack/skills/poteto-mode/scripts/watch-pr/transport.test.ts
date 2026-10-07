@@ -62,6 +62,10 @@ if (args[0] === 'pr' && args[1] === 'view') {
   } } } } };
 } else if (args.some(a => a.includes('query PrCommitStatuses'))) {
   value = { data: { repository: { pullRequest: { commits: { nodes: [{ commit: { oid: 'head', statusCheckRollup: { state: 'SUCCESS' } } }] } } } } };
+} else if (args.some(a => a.includes('query ReviewActivity'))) {
+  value = { data: { viewer: { login: 'me' }, repository: { pullRequest: { author: { login: 'me' }, createdAt: '2026-01-01T00:00:00Z', headRefName: 'feature', headRepository: { name: 'repo', owner: { login: 'owner' } }, timelineItems: { nodes: [] }, comments: { nodes: [] }, reviews: { nodes: [] }, reviewThreads: { nodes: [] }, reactions: { nodes: [] } } } } };
+} else if (args[0] === 'api' && args.includes('repos/owner/repo/activity') && args.includes('ref=refs/heads/feature') && args.includes('per_page=1')) {
+  value = [{ after: 'head', timestamp: '2026-01-01T00:00:00Z' }];
 } else { throw new Error('unexpected fixture command: ' + JSON.stringify(args)); }
 console.log(JSON.stringify(value));
 `

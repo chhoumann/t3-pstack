@@ -33,6 +33,7 @@ const options = {
   timeout: 1,
   maxQueryErrors: 5,
   allowDraft: false,
+  settle: 0,
 };
 const unbounded = new WatchDeadline(0, () => 0);
 const snapshotArgs = {

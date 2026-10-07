@@ -5,6 +5,7 @@ import {
   resolveChecks,
 } from "./github.ts";
 import { DeadlineExceeded, type WatchDeadline } from "./deadline.ts";
+import { reviewSettler, settleWait, type ReviewSettler } from "./settle.ts";
 import type * as T from "./types.ts";
 import { nonEmpty } from "./types.ts";
 export function assessGitHubMerge(args: {
@@ -205,15 +206,17 @@ export async function readSnapshot(args: {
   readonly pendingHistory: "include" | "omit";
   readonly allowDraft: boolean;
   readonly confirmNoChecks?: NoChecksConfirmer;
+  readonly settler?: ReviewSettler;
 }): Promise<T.PrSnapshot> {
   const facts = await args.reader.pullRequest(args.context);
   if (facts.state === "MERGED" || facts.mergedAt !== null)
     return { kind: "merged", context: args.context, facts };
   if (facts.state === "CLOSED")
     return { kind: "closed", context: args.context, facts };
-  const [threads, checks] = await Promise.all([
+  const [threads, checks, settle] = await Promise.all([
     args.reader.reviewThreads(args.context),
     resolveChecks(args.reader, args.context),
+    args.settler?.(facts) ?? ({ kind: "off" } as const),
   ]);
   const ci =
     checks.kind === "no-checks"
@@ -242,6 +245,7 @@ export async function readSnapshot(args: {
             check.name.toLowerCase().includes(token)
           )
       ),
+    settle,
   };
 }
 const conflictBlocker = (row: T.PrSnapshot): T.MergeBlocker | null =>
@@ -288,7 +292,7 @@ function waitReason(row: T.PrSnapshot): T.WaitReason | null {
   if (row.ci.kind === "ci-unreported") return { kind: "checks-unreported" };
   return mergeabilityUnknown(row.facts)
     ? { kind: "mergeability-unknown" }
-    : null;
+    : settleWait(row.settle);
 }
 const DEFERRED_WHILE_WAITING: ReadonlySet<T.MergeGateReason> = new Set([
   "draft-pr",
@@ -569,6 +573,11 @@ export async function runSimple(args: {
 }): Promise<T.TerminalVerdict> {
   const stamp = verdictFactory(args.dependencies.clock, args.mode);
   const confirmNoChecks = noChecksConfirmer(args.dependencies.clock);
+  const settler = reviewSettler(
+    args.dependencies.reader,
+    args.dependencies.clock,
+    args.mode === "queued-stack" ? 0 : args.options.settle
+  );
   const step = async (): Promise<StepResult<T.TerminalVerdict>> => {
     const rows: T.PrSnapshot[] = [];
     for (const context of args.contexts)
@@ -579,6 +588,7 @@ export async function runSimple(args: {
           pendingHistory: "include",
           allowDraft: args.options.allowDraft,
           confirmNoChecks,
+          settler,
         })
       );
     const complete = nonEmpty(rows);

@@ -43,6 +43,7 @@ const options = {
   timeout: 0,
   maxQueryErrors: 5,
   allowDraft: false,
+  settle: 0,
 } satisfies PollingOptions;
 
 describe("readiness truth table", () => {
