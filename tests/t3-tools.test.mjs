@@ -43,3 +43,18 @@ describe("the T3 mapping's watch-pr commands", () => {
     expect(unbounded).toEqual([]);
   });
 });
+
+// Role labels come from the synced models.json, so a merge can rename one the mapping
+// dispatches to, such as the review loop's seats or the research delegate's entry.
+describe("the T3 mapping's role names", () => {
+  const roles = new Set(JSON.parse(readFileSync(join(root, "plugins/pstack/models.json"), "utf8")).roles.map((r) => r.role));
+  const named = [...mapping.matchAll(/`([a-z][a-z ,-]*)` (?:entry|entries|panel)\b/g)].map((m) => m[1]);
+
+  test("name the review loop's seats, so the check below cannot pass on zero roles", () => {
+    expect(named).toEqual(expect.arrayContaining(["interrogate reviewers", "feature, refactoring", "how explorer"]));
+  });
+
+  test("are all roles models.json declares", () => {
+    expect(named.filter((role) => !roles.has(role))).toEqual([]);
+  });
+});

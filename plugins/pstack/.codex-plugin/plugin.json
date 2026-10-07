@@ -1,6 +1,6 @@
 {
   "name": "t3-pstack",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "pstack for T3 Code on a Codex host. Subagents, panels, schedules, and PR watches dispatch through T3's orchestration (skills/poteto-mode/references/t3-tools.md); other tool names resolve via codex-tools.md. Original pstack by Lauren Tan (poteto); Claude Code port by Michael Denyer.",
   "author": {
     "name": "Christian Bager Bach Houmann",
