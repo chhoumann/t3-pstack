@@ -16,18 +16,28 @@ function declaredFlags(source) {
   return new Set([...table[1].matchAll(/(?:\.option\(|new Option\()\s*"(--[a-z-]+)/g)].map((m) => m[1]));
 }
 
-function namedFlags(markdown) {
-  const commands = [...markdown.matchAll(/`(watch-pr [^`]*)`/g)].map((m) => m[1]);
-  return new Set(commands.flatMap((command) => command.match(/--[a-z-]+/g) ?? []));
-}
+const commands = (markdown) => [...markdown.matchAll(/`(watch-pr [^`]*)`/g)].map((m) => m[1]);
+
+const namedFlags = (markdown) => new Set(commands(markdown).flatMap((command) => command.match(/--[a-z-]+/g) ?? []));
 
 describe("the T3 mapping's watch-pr commands", () => {
-  test("name exactly the flags the mapping relies on", () => {
-    expect([...namedFlags(mapping)].sort()).toEqual(["--pr", "--queued-stack", "--stack", "--stack-prs", "--timeout"]);
-  });
-
   test("use only flags the watcher declares", () => {
     const declared = declaredFlags(cli);
     expect([...namedFlags(mapping)].filter((flag) => !declared.has(flag))).toEqual([]);
+  });
+
+  test("include a --timeout, so the checks here cannot pass on zero commands", () => {
+    expect(namedFlags(mapping)).toContain("--timeout");
+  });
+
+  // A tool call is capped at 600 seconds, and the watcher's own default is no deadline.
+  test("bound every blocking run under the tool cap", () => {
+    const unbounded = commands(mapping)
+      .filter((command) => !command.includes("--status-only"))
+      .filter((command) => {
+        const seconds = Number(command.match(/--timeout (\d+)/)?.[1]);
+        return !(seconds > 0 && seconds < 600);
+      });
+    expect(unbounded).toEqual([]);
   });
 });
