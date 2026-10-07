@@ -16,7 +16,10 @@ function declaredFlags(source) {
   return new Set([...table[1].matchAll(/(?:\.option\(|new Option\()\s*"(--[a-z-]+)/g)].map((m) => m[1]));
 }
 
-const commands = (markdown) => [...markdown.matchAll(/`(watch-pr [^`]*)`/g)].map((m) => m[1]);
+// A command is a backticked span that runs watch-pr with arguments, after any path
+// or shell prefix. A bare `watch-pr` names the tool and runs nothing.
+const commands = (markdown) =>
+  [...markdown.matchAll(/`([^`]*)`/g)].flatMap((m) => m[1].match(/(?<=^|[\s/])watch-pr\s.*/) ?? []);
 
 const namedFlags = (markdown) => new Set(commands(markdown).flatMap((command) => command.match(/--[a-z-]+/g) ?? []));
 
@@ -31,13 +34,12 @@ describe("the T3 mapping's watch-pr commands", () => {
   });
 
   // A tool call is capped at 600 seconds, and the watcher's own default is no deadline.
-  test("bound every blocking run under the tool cap", () => {
-    const unbounded = commands(mapping)
-      .filter((command) => !command.includes("--status-only"))
-      .filter((command) => {
-        const seconds = Number(command.match(/--timeout (\d+)/)?.[1]);
-        return !(seconds > 0 && seconds < 600);
-      });
+  // --status-only is bounded too: a head with no checks yet retries for 12 minutes.
+  test("bound every run under the tool cap", () => {
+    const unbounded = commands(mapping).filter((command) => {
+      const seconds = Number(command.match(/--timeout[ =](\d+)/)?.[1]);
+      return !(seconds > 0 && seconds < 600);
+    });
     expect(unbounded).toEqual([]);
   });
 });
