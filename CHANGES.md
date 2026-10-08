@@ -2,6 +2,12 @@
 
 This file is the release changelog, with one `## <version> - <title>` entry per release, newest first. The Cursor-to-Claude rewrite rules live in [`tools/substitutions.json`](tools/substitutions.json), and the [sync boundary](CONTRIBUTING.md#the-sync-boundary) in `CONTRIBUTING.md` defines how a change to upstream's skill content is declared.
 
+## 1.0.7 - merge pstack-claude 0.9.75
+
+t3-pstack 1.0.7 merges pstack-claude 0.9.75 (upstream commit `3b0bc62`). The 0.9.75 entry below describes what came in: the Feature playbook bases a delegate's worktree on the branch's `HEAD`, not the remote default branch, and poteto-mode's fallback todolist moves to `.audit/<task-slug>.todo.md` when several sessions share a checkout. Model defaults are unchanged.
+
+- `t3-tools.md`'s Subagent policy already creates a delegate's worktree from `HEAD`, and now says so, so a delegate on a feature branch builds on its commits, matching upstream's Feature step 4.
+
 ## 1.0.6 - a bounded review loop with a verifier
 
 An audit of five days of t3-pstack delegation, about $2.6k at API prices, found roughly 40% of it wasted, mostly in how implement, review, and fix loops ran rather than in model choice. Nit cascades ran on inputs that cannot occur, fix rounds repaired earlier fixes, the full panel re-reviewed small fix diffs, and some review seats added no unique accepted finding. Verifiers that ran the real artifact after each fix returned the most per dollar.
@@ -75,6 +81,12 @@ t3-pstack is pstack-claude 0.9.69 with every subagent, panel, fan-out, schedule,
 - The checker rejects a malformed or duplicated role line, a list on a single-model role, a `default effort` line, a bad `session hook` value, and a single-family panel, counting `inherit-parent` as the parent's family. The generator runs the same grammar over the `t3` block.
 - The plugin is `t3-pstack@t3-pstack` (marketplace repo `chhoumann/t3-pstack`), and its model sheet is `t3-pstack-models.md`, so it never collides with pstack-claude's `pstack@pstack-claude` and `pstack-models.md`. Skill text keeps upstream's `pstack:<name>` spelling; `t3-tools.md` reads it as `t3-pstack:<name>`.
 - The sync denylist's `grok-` token became `(?<!/)grok-`, so a T3 target such as `grok/grok-4.7` passes while a bare Cursor slug still fails.
+
+## 0.9.75 - base delegate worktrees on the branch and separate parallel todolists
+
+The Feature playbook notes that Claude Code's `isolation: "worktree"` branches from the remote default branch unless `worktree.baseRef` is `"head"`. A delegate that builds on commits the default branch lacks now gets a worktree the parent creates from `HEAD`, and its brief names that base commit ([#228](https://github.com/michael-denyer/pstack-claude/issues/228)).
+
+poteto-mode's fallback todolist moves to `.audit/<task-slug>.todo.md` when several sessions share a checkout, beside the decision trail show-me-your-work already keeps there, so parallel sessions no longer write one `todo.md` ([#229](https://github.com/michael-denyer/pstack-claude/issues/229)).
 
 ## 0.9.74 - fix the code review's findings and bound Autopilot's verify rounds
 

@@ -1,7 +1,7 @@
 {
   "name": "t3-pstack",
   "displayName": "t3-pstack (no Copilot support)",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "t3-pstack runs only inside T3 Code; on GitHub Copilot install pstack@pstack-claude from michael-denyer/pstack-claude.",
   "author": {
     "name": "Christian Bager Bach Houmann",
