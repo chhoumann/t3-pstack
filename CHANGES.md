@@ -2,6 +2,12 @@
 
 This file is the release changelog, with one `## <version> - <title>` entry per release, newest first. The Cursor-to-Claude rewrite rules live in [`tools/substitutions.json`](tools/substitutions.json), and the [sync boundary](CONTRIBUTING.md#the-sync-boundary) in `CONTRIBUTING.md` defines how a change to upstream's skill content is declared.
 
+## 1.0.7 - merge pstack-claude 0.9.75
+
+t3-pstack 1.0.7 merges pstack-claude 0.9.75 (upstream commit `3b0bc62`). The 0.9.75 entry below describes what came in: the Feature playbook bases a delegate's worktree on the branch's `HEAD`, not the remote default branch, and poteto-mode's fallback todolist moves to `.audit/<task-slug>.todo.md` when several sessions share a checkout. Model defaults are unchanged.
+
+- `t3-tools.md`'s Subagent policy already creates a delegate's worktree from `HEAD`, and now says so, so a delegate on a feature branch builds on its commits, matching upstream's Feature step 4.
+
 ## 1.0.6 - a bounded review loop with a verifier
 
 An audit of five days of t3-pstack delegation, about $2.6k at API prices, found roughly 40% of it wasted, mostly in how implement, review, and fix loops ran rather than in model choice. Nit cascades ran on inputs that cannot occur, fix rounds repaired earlier fixes, the full panel re-reviewed small fix diffs, and some review seats added no unique accepted finding. Verifiers that ran the real artifact after each fix returned the most per dollar.
