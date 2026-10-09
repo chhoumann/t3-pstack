@@ -2,6 +2,12 @@
 
 This file is the release changelog, with one `## <version> - <title>` entry per release, newest first. The Cursor-to-Claude rewrite rules live in [`tools/substitutions.json`](tools/substitutions.json), and the [sync boundary](CONTRIBUTING.md#the-sync-boundary) in `CONTRIBUTING.md` defines how a change to upstream's skill content is declared.
 
+## 1.0.8 - merge pstack-claude 0.9.79
+
+t3-pstack 1.0.8 merges pstack-claude 0.9.76 through 0.9.79 (upstream commit `60ae9e2`), which carries Lauren Tan's pstack v0.15.15. The upstream entries below describe what came in. `/poteto-help` offers `/setup-pstack` when the model sheet is missing and the answer depends on it, and the substitution rules match model lists of any length. reflect passes its reviewers the transcript path with nothing beside it, and the fallback digest records events without a verdict. `haiku` joins the default Claude panel in `models.json`. Its `t3` block is unchanged, so the T3 defaults and every T3 sheet are too. Fixes cover the shipping dequeue input id, the worktree-audit and Pi restore guards, `watch-pr` rejecting an `--interval` too long for one timer, the orchestration store lock, the Pi wakeup slot, the sync slug period, and the shipping test fakes, with a `lean/` model of the polling arithmetic.
+
+- `t3-tools.md`'s `poteto-help` row covers the new missing-sheet question. It reads `t3-pstack-models.md` and offers a model per role without a default effort, because a T3 sheet sets effort in each entry.
+
 ## 1.0.7 - merge pstack-claude 0.9.75
 
 t3-pstack 1.0.7 merges pstack-claude 0.9.75 (upstream commit `3b0bc62`). The 0.9.75 entry below describes what came in: the Feature playbook bases a delegate's worktree on the branch's `HEAD`, not the remote default branch, and poteto-mode's fallback todolist moves to `.audit/<task-slug>.todo.md` when several sessions share a checkout. Model defaults are unchanged.
@@ -81,6 +87,38 @@ t3-pstack is pstack-claude 0.9.69 with every subagent, panel, fan-out, schedule,
 - The checker rejects a malformed or duplicated role line, a list on a single-model role, a `default effort` line, a bad `session hook` value, and a single-family panel, counting `inherit-parent` as the parent's family. The generator runs the same grammar over the `t3` block.
 - The plugin is `t3-pstack@t3-pstack` (marketplace repo `chhoumann/t3-pstack`), and its model sheet is `t3-pstack-models.md`, so it never collides with pstack-claude's `pstack@pstack-claude` and `pstack-models.md`. Skill text keeps upstream's `pstack:<name>` spelling; `t3-tools.md` reads it as `t3-pstack:<name>`.
 - The sync denylist's `grok-` token became `(?<!/)grok-`, so a T3 target such as `grok/grok-4.7` passes while a bare Cursor slug still fails.
+
+## 0.9.79 - dequeue a queued PR, and fixes from three models and a code review
+
+`ship-pr cancel-pending` can take a PR out of a merge queue. The dequeue request named the pull request in `pullRequestId`, a field GitHub's `DequeuePullRequestInput` does not have, so GitHub refused it. The request now sends `id`, and `disablePullRequestAutoMerge` keeps `pullRequestId`, which is the name its own input type uses. @alex-overcyai found and fixed this in [#239](https://github.com/michael-denyer/pstack-claude/pull/239). Both shipping test files now answer from one fake of `gh api graphql`. The fake returns only the fields a query selects and refuses a mutation with the wrong input field or variable type, so the same mistake on either mutation fails a test.
+
+`watch-pr` refuses an `--interval` above 2147483.647 seconds. A timer delay above 2^31 - 1 ms is replaced with 1 ms, so a longer interval made every poll sleep return at once.
+
+On Pi, a `/loop` typed during a manual compaction no longer leaves the wakeup slot sealed. The scheduler treated any session that was not idle as a run in flight, and Pi is not idle during a compaction, so it refused the next run at every wakeup. It now tracks a run from `agent_start` to `agent_settled` and seals the slot only between the two.
+
+The orchestration store's lock release can no longer delete a lock that a forced takeover has just written. The release read the lock, saw its own pid, and unlinked the lock by path as a separate step. It now does both behind the claim a takeover holds, and waits for a live claimant to finish.
+
+The three fixes above came from models of the code, which ship with them: `lean/Model/WatchPoll.lean` for the polling arithmetic, and `tla/PiScheduler.tla` and `tla/OrchStoreLock.tla` for the scheduler and the lock. Two runs of each TLA+ model still fail by design and record narrower findings these fixes do not close.
+
+worktree-audit keeps a transcript root it cannot inspect for any reason other than absence. It reports the scan failure and leaves recent activity unknown, so the worktree needs review instead of reading as idle. On Pi, a restored agent stays unavailable until its previous process is confirmed gone. Pi signals only an orphan whose identity matches, and an older record without enough identity data refuses continuation while that process is alive.
+
+`/poteto-help` offers "a default effort" where it offered "a reasoning budget", a step the port's `/setup-pstack` does not have. The sync rule that scrubs model slugs in `setup-pstack` no longer takes a sentence's period into the slug.
+
+## 0.9.78 - sync to upstream df58112 (v0.15.15)
+
+The upstream pin moves from `2cbf585` to `df58112`, upstream v0.15.15, two commits. `/poteto-help` now offers `/setup-pstack` when the model sheet is missing and the answer depends on it. It asks at most once per chat, and a user who declines is told that every role keeps its default model. Upstream also dropped one model from its default panel and lowered its Opus effort from `max` to `xhigh`. The port takes neither change, because `models.json` sets the port's panel and effort. `setup-pstack` keeps the port's default-effort step in place of upstream's reworded budget step.
+
+The substitution rules that point a default model list at the Models section now match a list of any length, as does the rule for the model family sentence. New rules cover the delegate defaults in `poteto-mode`, the default-model column of the `reflect` reviewer table, and every slug in `setup-pstack`, so an upstream model change on those lines no longer conflicts with the port. `interrogate` says "the Reviewer labels below" and names no label run, since the generator stamps the table from the panel.
+
+Measured with `bun tools/sync.mjs pstack 1e56b29`, then `df58112`, over 82 synced files with 36 excluded: the first run changed `poteto-help`, and the second changed five files, `poteto-help` among them. Two conflicts were resolved by hand. `poteto-help` keeps the port's `/swarm` row and takes upstream's `/interrogate` row. No file became port-only.
+
+## 0.9.77 - add haiku to the default panel
+
+The default panel is `opus`, `fable`, `sonnet`, `haiku`. With no override sheet, `arena` and `architect` run four runners, `interrogate` runs four reviewers, with `haiku` as Reviewer D, and the `arena` cross-judge pool includes `haiku`. A `pstack-models.md` sheet that names these roles keeps its own lists. The Codex panel is unchanged. On Pi, `haiku` resolves through the `pi.models` table in `models.json`.
+
+## 0.9.76 - keep the parent's verdict out of reflect's reviewer prompts
+
+reflect passes the transcript path to its reviewers with nothing beside it. When the finder cannot locate the transcript, the fallback digest records the session's prompts, corrections, tool calls, results, and files in turn order, and states no diagnosis, verdict, or cause. A reviewer that reads the parent's conclusion first tends to audit that conclusion instead of the session ([#231](https://github.com/michael-denyer/pstack-claude/issues/231)).
 
 ## 0.9.75 - base delegate worktrees on the branch and separate parallel todolists
 

@@ -19,3 +19,6 @@ plugins/pstack/skills/poteto-mode/scripts/node_modules/
 
 # Worktrees created for isolated agent work
 .claude/worktrees/
+
+# Lake build output for the Lean models
+/lean/.lake/
