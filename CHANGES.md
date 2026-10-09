@@ -2,6 +2,12 @@
 
 This file is the release changelog, with one `## <version> - <title>` entry per release, newest first. The Cursor-to-Claude rewrite rules live in [`tools/substitutions.json`](tools/substitutions.json), and the [sync boundary](CONTRIBUTING.md#the-sync-boundary) in `CONTRIBUTING.md` defines how a change to upstream's skill content is declared.
 
+## 1.0.8 - merge pstack-claude 0.9.79
+
+t3-pstack 1.0.8 merges pstack-claude 0.9.76 through 0.9.79 (upstream commit `60ae9e2`), which carries Lauren Tan's pstack v0.15.15. The upstream entries below describe what came in. `/poteto-help` offers `/setup-pstack` when the model sheet is missing and the answer depends on it, and the substitution rules match model lists of any length. reflect passes its reviewers the transcript path with nothing beside it, and the fallback digest records events without a verdict. `haiku` joins the default Claude panel in `models.json`. Its `t3` block is unchanged, so the T3 defaults and every T3 sheet are too. Fixes cover the shipping dequeue input id, the worktree-audit and Pi restore guards, `watch-pr` rejecting an `--interval` too long for one timer, the orchestration store lock, the Pi wakeup slot, the sync slug period, and the shipping test fakes, with a `lean/` model of the polling arithmetic.
+
+- `t3-tools.md`'s `poteto-help` row covers the new missing-sheet question. It reads `t3-pstack-models.md` and offers a model per role without a default effort, because a T3 sheet sets effort in each entry.
+
 ## 1.0.7 - merge pstack-claude 0.9.75
 
 t3-pstack 1.0.7 merges pstack-claude 0.9.75 (upstream commit `3b0bc62`). The 0.9.75 entry below describes what came in: the Feature playbook bases a delegate's worktree on the branch's `HEAD`, not the remote default branch, and poteto-mode's fallback todolist moves to `.audit/<task-slug>.todo.md` when several sessions share a checkout. Model defaults are unchanged.
