@@ -87,6 +87,17 @@ t3-pstack is pstack-claude 0.9.69 with every subagent, panel, fan-out, schedule,
 - The checker rejects a malformed or duplicated role line, a list on a single-model role, a `default effort` line, a bad `session hook` value, and a single-family panel, counting `inherit-parent` as the parent's family. The generator runs the same grammar over the `t3` block.
 - The plugin is `t3-pstack@t3-pstack` (marketplace repo `chhoumann/t3-pstack`), and its model sheet is `t3-pstack-models.md`, so it never collides with pstack-claude's `pstack@pstack-claude` and `pstack-models.md`. Skill text keeps upstream's `pstack:<name>` spelling; `t3-tools.md` reads it as `t3-pstack:<name>`.
 - The sync denylist's `grok-` token became `(?<!/)grok-`, so a T3 target such as `grok/grok-4.7` passes while a bare Cursor slug still fails.
+## 0.9.81 - inspect terminal PRs and recover orphaned Pi agents
+
+`ship-pr inspect` reads closed and merged PRs after their base branch is deleted, using the stored base commit when the current branch is gone. Open PRs still require the current base target, and cancellation refuses a closed or merged PR before changing anything.
+
+Pi retries orphan cleanup when process inspection recovers, including when inspection failed at the delayed SIGKILL check. Each signal checks process identity, termination attempts do not overlap, and the agent can resume only after the previous process exits. Both fixes are in [#247](https://github.com/michael-denyer/pstack-claude/pull/247).
+
+## 0.9.80 - compare the base branch's current commit
+
+`watch-pr` and `ship-pr` read the base branch's current commit from `baseRef { target { oid } }`. They read the pull request's `baseRefOid` before, a value GitHub records when the PR opens and does not always move when the base branch advances, so a base that moved between two reads could pass the snapshot check and the `cancel-pending` comparison. The watcher takes the head and base facts from one GraphQL query, so both come from one observation. An open PR whose base ref is unavailable is a query failure, not a landing record. @mshk found and fixed this in [#245](https://github.com/michael-denyer/pstack-claude/pull/245), closing [#244](https://github.com/michael-denyer/pstack-claude/issues/244).
+
+The watcher unwraps every GraphQL response in one place, so a response carrying `errors` fails all five queries the same way. The empty review decision that `gh pr view` reported is gone with the command that reported it: GraphQL returns null, and an empty string is now rejected like any other unknown value.
 
 ## 0.9.79 - dequeue a queued PR, and fixes from three models and a code review
 

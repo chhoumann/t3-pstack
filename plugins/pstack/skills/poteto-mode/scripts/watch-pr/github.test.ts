@@ -9,6 +9,7 @@ import {
   parseFastCheck,
   parsePullRequest,
   parseReviewThreads,
+  PR_FACTS_QUERY,
   resolveChecks,
   resolveContext,
   runJson,
@@ -299,7 +300,7 @@ describe("closed enum parsing", () => {
     mergeStateStatus: "CLEAN",
     reviewDecision: "APPROVED",
     headRefOid: "head",
-    baseRefOid: "base",
+    baseRef: { target: { oid: "base" } },
     headRefName: "feature",
     baseRefName: "main",
     state: "OPEN",
@@ -316,17 +317,42 @@ describe("closed enum parsing", () => {
     ).toBe("CONFLICTING");
   });
 
-  it("reads gh's empty reviewDecision as no decision rather than a parse failure", () => {
-    expect(
+  it("rejects an empty reviewDecision like any other unknown enum value", () => {
+    expect(() =>
       parsePullRequest({ ...rawPullRequest, reviewDecision: "" }, context)
-        .reviewDecision
-    ).toBeNull();
+    ).toThrow(WatcherQueryError);
   });
 
   it("still rejects an unknown reviewDecision", () => {
     expect(() =>
       parsePullRequest({ ...rawPullRequest, reviewDecision: "MAYBE" }, context)
     ).toThrow(WatcherQueryError);
+  });
+
+  it("uses the current base target when the scalar base OID is stale", () => {
+    expect(
+      parsePullRequest(
+        {
+          ...rawPullRequest,
+          baseRefOid: "stale-base",
+          baseRef: { target: { oid: "current-base" } },
+        },
+        context
+      ).baseRefOid
+    ).toBe("current-base");
+  });
+
+  it("queries the current base target with the other PR facts", () => {
+    expect(PR_FACTS_QUERY).toContain("baseRef { target { oid } }");
+    expect(PR_FACTS_QUERY).not.toContain("baseRefOid");
+  });
+
+  it("fails closed when the current base ref is null or missing", () => {
+    const missingBaseRef = Object.fromEntries(
+      Object.entries(rawPullRequest).filter(([key]) => key !== "baseRef")
+    );
+    for (const value of [{ ...rawPullRequest, baseRef: null }, missingBaseRef])
+      expect(() => parsePullRequest(value, context)).toThrow(WatcherQueryError);
   });
 
   it("rejects unknown enum values as retryable errors carrying the raw value", () => {
@@ -406,7 +432,9 @@ it("annotates Bugbot threads with distinct review-pass counts", () => {
       },
     },
   };
-  const threads = parseReviewThreads(response);
+  const threads = parseReviewThreads(
+    response.data.repository.pullRequest.reviewThreads.nodes
+  );
   expect(threads).toHaveLength(2);
   expect(threads.map((thread) => thread.isBugbot)).toEqual([true, true]);
   expect(threads.map((thread) => thread.bugbotReviewPasses)).toEqual([3, 3]);
