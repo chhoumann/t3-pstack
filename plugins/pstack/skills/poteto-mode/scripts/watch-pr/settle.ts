@@ -132,7 +132,16 @@ export interface ParsedReviewActivity
   } | null;
 }
 export function parseReviewActivity(value: unknown): ParsedReviewActivity {
-  const data = object(object(value, "response").data, "data");
+  // Fails closed on `errors` like GhGitHubReader.graphql, which this query
+  // cannot go through because it also reads the top-level `viewer`.
+  const response = object(value, "response");
+  if (response.errors !== undefined)
+    throw new WatcherQueryError({
+      kind: "missing-key",
+      retryable: true,
+      detail: `invalid GraphQL errors: ${JSON.stringify(response.errors)}`,
+    });
+  const data = object(response.data, "data");
   const pr = object(
     object(data.repository, "repository").pullRequest,
     "pullRequest"

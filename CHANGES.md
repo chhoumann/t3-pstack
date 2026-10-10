@@ -2,6 +2,12 @@
 
 This file is the release changelog, with one `## <version> - <title>` entry per release, newest first. The Cursor-to-Claude rewrite rules live in [`tools/substitutions.json`](tools/substitutions.json), and the [sync boundary](CONTRIBUTING.md#the-sync-boundary) in `CONTRIBUTING.md` defines how a change to upstream's skill content is declared.
 
+## 1.0.9 - merge pstack-claude 0.9.81
+
+t3-pstack 1.0.9 merges pstack-claude 0.9.80 and 0.9.81 (upstream commit `24c96b1`). It carries no new change from Lauren Tan's pstack. The upstream entries below describe what came in: `watch-pr` and `ship-pr` compare the base branch's current commit instead of the PR's recorded `baseRefOid`, every GraphQL read in the watcher fails closed on `errors`, and `ship-pr inspect` reads a closed or merged PR whose base branch is gone. The Pi orphan cleanup fix comes in as upstream ships it; t3-pstack does not use Pi. Model defaults are unchanged.
+
+- The settle window's GraphQL read fails closed on `errors` too. It cannot go through the reader's new `graphql()` method, which returns only the pull request, because it also reads the top-level `viewer`, so `parseReviewActivity` in `settle.ts` checks `errors` itself and throws the same retryable failure. The `github.ts` hook is unchanged.
+
 ## 1.0.8 - merge pstack-claude 0.9.79
 
 t3-pstack 1.0.8 merges pstack-claude 0.9.76 through 0.9.79 (upstream commit `60ae9e2`), which carries Lauren Tan's pstack v0.15.15. The upstream entries below describe what came in. `/poteto-help` offers `/setup-pstack` when the model sheet is missing and the answer depends on it, and the substitution rules match model lists of any length. reflect passes its reviewers the transcript path with nothing beside it, and the fallback digest records events without a verdict. `haiku` joins the default Claude panel in `models.json`. Its `t3` block is unchanged, so the T3 defaults and every T3 sheet are too. Fixes cover the shipping dequeue input id, the worktree-audit and Pi restore guards, `watch-pr` rejecting an `--interval` too long for one timer, the orchestration store lock, the Pi wakeup slot, the sync slug period, and the shipping test fakes, with a `lean/` model of the polling arithmetic.

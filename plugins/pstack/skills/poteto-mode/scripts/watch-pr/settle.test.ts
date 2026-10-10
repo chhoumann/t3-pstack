@@ -426,6 +426,24 @@ describe("review activity reader", () => {
     });
   });
 
+  it("fails closed on a response that carries GraphQL errors", () => {
+    const failure = (() => {
+      try {
+        parseReviewActivity({
+          ...(graphql({}) as object),
+          errors: [{ message: "Something went wrong" }],
+        });
+      } catch (error) {
+        return error;
+      }
+    })();
+    expect(failure).toBeInstanceOf(WatcherQueryError);
+    expect((failure as WatcherQueryError).failure).toMatchObject({
+      kind: "missing-key",
+      retryable: true,
+    });
+  });
+
   it("dates the head only by the branch's newest push", () => {
     expect(
       parseHeadPush(
