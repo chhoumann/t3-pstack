@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 
 import { loadLeadLines, loadModels, noteSkills, parseModels, stampLeadLine } from "../tools/generate.mjs";
 import { RUNTIMES } from "../tools/runtimes.mjs";
-import { checkSheet, parseEntry, parseSheet } from "../plugins/pstack/skills/setup-pstack/scripts/t3-sheet.mjs";
+import { checkSheet, family, parseEntry, parseSheet } from "../plugins/pstack/skills/setup-pstack/scripts/t3-sheet.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const script = join(root, "plugins/pstack/skills/setup-pstack/scripts/t3-sheet.mjs");
@@ -22,6 +22,15 @@ const check = (text, over = catalog) => checkSheet(parseSheet(text), { roles, de
 const PANEL = "interrogate reviewers";
 
 describe("parseEntry", () => {
+  test("keeps a Pi model ID that has its own provider prefix", () => {
+    expect(parseEntry("pi/openai-codex/gpt-6.1-sol thinking=medium")).toEqual({
+      providerInstanceId: "pi",
+      model: "openai-codex/gpt-6.1-sol",
+      options: { thinking: "medium" },
+    });
+    expect(family("openai-codex/gpt-6.1-sol")).toBe(family("gpt-6.1-sol"));
+  });
+
   test("maps an entry onto a delegate_task target", () => {
     expect(parseEntry(" codex/gpt-6.1-sol reasoningEffort=xhigh serviceTier=priority ")).toEqual({
       providerInstanceId: "codex",

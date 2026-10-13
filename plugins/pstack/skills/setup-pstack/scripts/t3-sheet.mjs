@@ -24,7 +24,7 @@ export function parseEntry(text) {
     if (pairs.length) throw new Error(`"${text.trim()}": ${target} takes no options`);
     return null;
   }
-  const match = target.match(/^([A-Za-z0-9_-]+)\/([A-Za-z0-9._-]+)$/);
+  const match = target.match(/^([A-Za-z0-9_-]+)\/([A-Za-z0-9._\/-]+)$/);
   if (!match) throw new Error(`"${text.trim()}" does not start with <providerInstanceId>/<modelId>`);
   const options = Object.create(null);
   for (const pair of pairs) {
@@ -38,7 +38,7 @@ export function parseEntry(text) {
 
 // The family is the model ID's first segment (`claude`, `gpt`, `grok`), so a
 // Claude model served by a Codex-driver pool still counts as Claude.
-export const family = (model) => model.split("-")[0];
+export const family = (model) => model.split("/").pop().split("-")[0];
 
 // A panel's families among its concrete targets. An inherit entry does not
 // count: one sheet serves every thread on the machine, so its family depends on
