@@ -20,17 +20,22 @@ import {
 const readOr = (path, fallback) => (existsSync(path) ? readJson(path) : fallback);
 const RECORDS = "plugins/installed_plugins.json";
 
+// `settings` is the settings file at `path`, where the plugin is enabled and
+// the marketplace's auto-update is turned on. `record` is the install it uses.
 function read(dir) {
-  const settings = readOr(join(dir, "settings.json"), {});
+  const path = join(dir, "settings.json");
+  const settings = readOr(path, {});
   const known = readOr(join(dir, "plugins/known_marketplaces.json"), {});
   const records = readOr(join(dir, RECORDS), {}).plugins?.[PLUGIN_ID] ?? [];
   const user = records.find((r) => r.scope === "user");
   const declared = settings.extraKnownMarketplaces?.[MARKETPLACE];
   return {
+    path,
     settings,
     marketplace: declared ?? known[MARKETPLACE],
     // The source settings.json declares and the one Claude Code last fetched.
     sources: [declared, known[MARKETPLACE]].filter((m) => m?.source).map((m) => claudeSource(m.source)),
+    record: user,
     user,
     stale: user ? records.filter((r) => isStale(r, user)) : [],
     enabled: settings.enabledPlugins?.[PLUGIN_ID] === true,
@@ -40,7 +45,8 @@ function read(dir) {
 const isStale = (record, user) =>
   record.scope !== "user" && (record.version !== user.version || record.installPath !== user.installPath);
 
-const intact = (state, skills) => state.user !== undefined && pluginIntact(state.user.installPath, ".claude-plugin/plugin.json", skills);
+const intact = (state, skills) =>
+  state.record !== undefined && pluginIntact(state.record.installPath, ".claude-plugin/plugin.json", skills);
 
 // Third-party marketplaces default to no auto-update; the /plugin toggle
 // writes this key, and Claude Code copies it into known_marketplaces.json at
@@ -50,38 +56,39 @@ const autoUpdates = (marketplace) => marketplace?.autoUpdate === true || marketp
 export function installClaude(home, { source, trusted, version, skills }) {
   const steps = [];
   const plugin = (...args) => runCli(home.bin, ["plugin", ...args], { CLAUDE_CONFIG_DIR: home.dir });
+  const state = () => read(home.dir);
   mkdirSync(home.dir, { recursive: true });
-  if (!read(home.dir).sources.length) {
+  if (!state().sources.length) {
     plugin("marketplace", "add", source.arg);
     steps.push(`added the ${MARKETPLACE} marketplace from ${source.arg}`);
   }
   // Nothing installs from a marketplace of another source; doctor names it.
-  let state = read(home.dir);
-  if (!marketplaceCheck(state.sources, trusted).ok) return steps;
-  if (!state.user) {
+  let now = state();
+  if (!marketplaceCheck(now.sources, trusted).ok) return steps;
+  if (!now.record) {
     plugin("install", PLUGIN_ID, "--scope", "user");
-    steps.push(`installed ${read(home.dir).user?.version}`);
-  } else if (state.user.version !== version) {
+    steps.push(`installed ${state().record?.version}`);
+  } else if (now.record.version !== version) {
     // `plugin update` reads the marketplace as last fetched.
     plugin("marketplace", "update", MARKETPLACE);
     plugin("update", PLUGIN_ID, "--scope", "user");
-    steps.push(updated(state.user.version, read(home.dir).user?.version, version));
-  } else if (!intact(state, skills)) {
+    steps.push(updated(now.record.version, state().record?.version, version));
+  } else if (!intact(now, skills)) {
     plugin("install", PLUGIN_ID, "--scope", "user");
-    steps.push(`reinstalled ${read(home.dir).user?.version}, whose files were missing`);
+    steps.push(`reinstalled ${state().record?.version}, whose files were missing`);
   }
-  if (!read(home.dir).enabled) {
+  if (!state().enabled) {
     plugin("enable", PLUGIN_ID, "--scope", "user");
     steps.push("enabled it");
   }
-  state = read(home.dir);
-  if (state.marketplace && !autoUpdates(state.marketplace)) {
-    const declared = state.settings.extraKnownMarketplaces?.[MARKETPLACE] ?? { source: state.marketplace.source };
-    state.settings.extraKnownMarketplaces = {
-      ...state.settings.extraKnownMarketplaces,
+  now = state();
+  if (now.marketplace && !autoUpdates(now.marketplace)) {
+    const declared = now.settings.extraKnownMarketplaces?.[MARKETPLACE] ?? { source: now.marketplace.source };
+    now.settings.extraKnownMarketplaces = {
+      ...now.settings.extraKnownMarketplaces,
       [MARKETPLACE]: { ...declared, autoUpdate: true },
     };
-    writeAtomic(join(home.dir, "settings.json"), JSON.stringify(state.settings, null, 2) + "\n");
+    writeAtomic(now.path, JSON.stringify(now.settings, null, 2) + "\n");
     steps.push("turned on marketplace auto-update");
   }
   steps.push(...syncScopedRecords(home.dir));
@@ -117,7 +124,7 @@ export function syncScopedRecords(dir) {
 
 export function doctorClaude(home, { version, skills, trusted }) {
   const state = read(home.dir);
-  const installed = state.user?.version;
+  const installed = state.record?.version;
   const whole = intact(state, skills);
   const skillsDir = join(home.dir, "skills");
   const plain = existsSync(skillsDir)
@@ -134,7 +141,7 @@ export function doctorClaude(home, { version, skills, trusted }) {
           ? `${installed}, expected ${version}`
           : whole
             ? installed
-            : `${installed}, but its files at ${state.user.installPath} are missing`,
+            : `${installed}, but its files at ${state.record.installPath} are missing`,
       INSTALL_HINT,
     ),
     check("enabled", state.enabled, state.enabled ? "yes" : "no", INSTALL_HINT),
