@@ -60,15 +60,15 @@ export function codexSource(entry) {
 
 // The marketplace check both doctors run. A marketplace named t3-pstack from
 // any source but the trusted ones is not installed from, nor its hook trusted.
-export function marketplaceCheck(sources, trusted, remove) {
-  if (!sources.length) return check("marketplace", false, "none", INSTALL_HINT);
+export function marketplaceCheck(sources, trusted, remove, hint = INSTALL_HINT) {
+  if (!sources.length) return check("marketplace", false, "none", hint);
   const labels = [...new Set(sources.map((s) => s.label))].join(", ");
   const foreign = sources.filter((s) => !trusted.has(s.key));
   return check(
     "marketplace",
     foreign.length === 0,
     foreign.length ? `${labels}, which is neither ${HOME_REPO} nor --source` : labels,
-    `if you trust it, rerun with --source ${foreign[0]?.label}; otherwise ${remove}, then ${INSTALL_HINT}`,
+    `if you trust it, rerun with --source ${foreign[0]?.label}; otherwise ${remove}, then ${hint}`,
   );
 }
 
@@ -82,10 +82,10 @@ export const isPlainCopy = (name, skillFile, skills) =>
 export const pluginIntact = (root, manifest, skills) =>
   existsSync(join(root, manifest)) && [...skills.keys()].every((name) => existsSync(join(root, "skills", name, "SKILL.md")));
 
-// Every CLI runs from an empty directory. Claude Code reads `<cwd>/.claude`
-// as project settings, and from the home folder that is the main home's
-// settings.json, so the user's own working directory could leak into the
-// home being installed.
+// Every CLI runs from an empty directory unless the caller names a `cwd`.
+// Claude Code reads `<cwd>/.claude` as project settings, and from the home
+// folder that is the main home's settings.json, so the user's own working
+// directory could leak into the home being installed.
 let neutral;
 export function neutralCwd() {
   if (!neutral) {
@@ -136,12 +136,12 @@ export function launch(bin, args) {
   };
 }
 
-export function runCli(bin, args, env) {
+export function runCli(bin, args, env, cwd = neutralCwd()) {
   const run = launch(bin, args);
   try {
     return execFileSync(run.file, run.args, {
       ...run.options,
-      cwd: neutralCwd(),
+      cwd,
       env: { ...process.env, ...env },
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
