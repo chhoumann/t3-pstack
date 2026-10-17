@@ -14,19 +14,20 @@
 //
 //   npx -y github:chhoumann/t3-pstack <install|update|doctor>
 //     --source <owner/repo|git URL|dir>   marketplace source, default chhoumann/t3-pstack
+//     --project <dir>, --local <dir>   install for one project, at project or local scope
 //     --claude-home <dir>, --codex-home <dir>   more homes, repeatable
 //     --catalog <file>   an orchestrator_capabilities dump to check the sheet's targets against
 //     --json
 // Node 20 or later, no dependencies.
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
 import { doctorClaude, installClaude } from "./install/claude.mjs";
 import { doctorCodex, installCodex } from "./install/codex.mjs";
-import { check, hasCli, HOME_REPO, INSTALL_HINT, parseSource, readJson } from "./install/common.mjs";
+import { check, expandHome, hasCli, HOME_REPO, installHint, parseSource, readJson } from "./install/common.mjs";
 import { discoverHomes } from "./install/homes.mjs";
 import { doctorSheet, moveSheet, sheetPath } from "./install/sheet.mjs";
 import { FROZEN_HOOKS } from "./plugin.mjs";
@@ -38,7 +39,18 @@ const HARNESSES = {
 
 const USAGE =
   "usage: t3-pstack <install|update|doctor> [--source <owner/repo|git URL|dir>] " +
-  "[--claude-home <dir>]... [--codex-home <dir>]... [--catalog <file>] [--json]";
+  "[--project <dir> | --local <dir>] [--claude-home <dir>]... [--codex-home <dir>]... [--catalog <file>] [--json]";
+
+// The project a `--project` or `--local` run installs for, by its real path,
+// as both CLIs record it.
+function projectTarget(values, home) {
+  if (values.project !== undefined && values.local !== undefined) throw new Error("--project and --local name one project between them");
+  const scope = values.local !== undefined ? "local" : values.project !== undefined ? "project" : null;
+  if (!scope) return null;
+  const path = resolve(expandHome(values[scope], home));
+  if (!statSync(path, { throwIfNoEntry: false })?.isDirectory()) throw new Error(`--${scope} ${values[scope]}: not a directory`);
+  return { scope, dir: realpathSync(path) };
+}
 
 // What to converge on comes from the plugin this run installs: the local
 // source, or else this package, which is the marketplace's own repo. `skills`
@@ -64,6 +76,8 @@ async function run(argv, env, home) {
     allowPositionals: true,
     options: {
       source: { type: "string" },
+      project: { type: "string" },
+      local: { type: "string" },
       "claude-home": { type: "string", multiple: true, default: [] },
       "codex-home": { type: "string", multiple: true, default: [] },
       catalog: { type: "string" },
@@ -74,9 +88,11 @@ async function run(argv, env, home) {
   if (positionals.length !== 1 || !["install", "update", "doctor"].includes(command)) return { usage: true };
 
   const source = parseSource(values.source ?? HOME_REPO, home);
+  const project = projectTarget(values, home);
+  const hint = installHint(project);
   const facts = pluginFacts(source.local ?? fileURLToPath(new URL("..", import.meta.url)));
   const trusted = new Set([parseSource(HOME_REPO, home).key, source.key]);
-  const context = { source, trusted, version: facts.version, skills: facts.skills, codexHook: facts.codexHook };
+  const context = { source, trusted, version: facts.version, skills: facts.skills, codexHook: facts.codexHook, project };
   const { homes, settings } = discoverHomes({
     env,
     home,
@@ -85,7 +101,7 @@ async function run(argv, env, home) {
   });
   const catalog = values.catalog ? readJson(values.catalog) : null;
 
-  const report = { command, version: facts.version, source: source.arg, settings, homes: [] };
+  const report = { command, version: facts.version, source: source.arg, project, settings, homes: [] };
   for (const target of homes) {
     const harness = HARNESSES[target.harness];
     const row = { harness: target.harness, dir: target.dir, from: target.from, steps: [], checks: [] };
@@ -95,14 +111,14 @@ async function run(argv, env, home) {
       continue;
     }
     if (command === "doctor" && !existsSync(target.dir)) {
-      row.checks.push(check("installed", false, "the home does not exist", INSTALL_HINT));
+      row.checks.push(check("installed", false, "the home does not exist", hint));
       continue;
     }
     try {
       if (command !== "doctor") row.steps = await harness.install(target, context);
       row.checks.push(...(await harness.doctor(target, context)));
     } catch (err) {
-      row.checks.push(check(command === "doctor" ? "doctor" : "install", false, err.message, INSTALL_HINT));
+      row.checks.push(check(command === "doctor" ? "doctor" : "install", false, err.message, hint));
     }
   }
   const sheet = sheetPath(env, home);
@@ -110,7 +126,7 @@ async function run(argv, env, home) {
   try {
     if (command !== "doctor") report.sheet.steps = moveSheet(sheet, homes);
   } catch (err) {
-    report.sheet.checks.push(check("move", false, err.message, INSTALL_HINT));
+    report.sheet.checks.push(check("move", false, err.message, hint));
   }
   report.sheet.checks.push(...doctorSheet(sheet, homes, { catalog, roles: facts.roles, tiers: facts.tiers }));
   const all = [...report.homes.flatMap((row) => row.checks), ...report.sheet.checks];
@@ -119,8 +135,9 @@ async function run(argv, env, home) {
   return { report, json: values.json };
 }
 
-function render({ command, version, source, settings, homes, sheet, failed, warnings }, home) {
+function render({ command, version, source, project, settings, homes, sheet, failed, warnings }, home) {
   const lines = [`t3-pstack ${version} from ${source}`];
+  if (project) lines.push(`Project: ${project.dir}, at ${project.scope} scope`);
   lines.push(`T3 settings: ${settings.path}${settings.error ? ` (${settings.error})` : `, ${settings.instances} Claude Code or Codex instances`}`);
   const section = (title, steps, checks) => {
     lines.push("", title);

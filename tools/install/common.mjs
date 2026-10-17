@@ -12,6 +12,10 @@ export const MARKETPLACE = "t3-pstack";
 export const HOME_REPO = "chhoumann/t3-pstack";
 export const INSTALL_HINT = "rerun `npx -y github:chhoumann/t3-pstack install`";
 
+// The rerun a fix names: the global one, or the project install's own flag.
+export const installHint = (project) =>
+  project ? `rerun \`npx -y github:chhoumann/t3-pstack install --${project.scope} ${project.dir}\`` : INSTALL_HINT;
+
 // `~`, `~/` and `~\` expand as T3 expands them (provider-core
 // pathExpansion.ts). `~user` does not.
 export const expandHome = (path, home) => (path === "~" ? home : /^~[/\\]/.test(path) ? join(home, path.slice(2)) : path);
