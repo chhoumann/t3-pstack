@@ -43,9 +43,9 @@ function sh(bin, args, env = {}) {
   return r.stdout;
 }
 
-// `source` null runs with no --source, as a user does.
-function installer(command, source = repoRoot) {
-  const r = spawnSync("node", [join(repoRoot, "tools/install.mjs"), command, ...(source ? ["--source", source] : []), "--json"], {
+// `source` null runs with no --source, as a user does. `extra` adds flags.
+function installer(command, source = repoRoot, extra = []) {
+  const r = spawnSync("node", [join(repoRoot, "tools/install.mjs"), command, ...(source ? ["--source", source] : []), ...extra, "--json"], {
     cwd: root,
     env: process.env,
     encoding: "utf8",
@@ -75,10 +75,10 @@ async function until(done, ms) {
 
 // A T3-shaped Codex session: thread/start, then one turn. SessionStart runs
 // at the first turn, before the model call.
-async function probe(codexHome) {
+async function probe(codexHome, cwd = root) {
   const server = await AppServer.start({ dir: codexHome, bin: "codex" });
   try {
-    const { thread } = await server.request("thread/start", { cwd: root, approvalPolicy: "never", sandbox: "read-only" });
+    const { thread } = await server.request("thread/start", { cwd, approvalPolicy: "never", sandbox: "read-only" });
     await server.request("turn/start", { threadId: thread.id, input: [{ type: "text", text: "ping" }] });
     expect(await until(() => server.notifications.some((m) => m.method === "turn/completed"), 90_000), "turn completed").toBe(true);
     const rollout = readFileSync(thread.path, "utf8")
@@ -482,5 +482,118 @@ describe.skipIf(!enabled)("the installer, on a Codex home that changes while it 
         '"message":"Configuration was modified since last read. Fetch latest version and retry."}',
     ]);
     expect(await trustState()).toBe(null);
+  }, 300_000);
+});
+
+describe.skipIf(!enabled)("the installer, for one project", () => {
+  isolate({});
+  let project;
+  let elsewhere;
+  const source = () => repoRoot.replace(/\/$/, "");
+
+  test("install: the plugin loads in the project's sessions and nowhere else", async () => {
+    project = join(root, "project");
+    elsewhere = join(root, "elsewhere");
+    for (const dir of [project, elsewhere]) mkdirSync(dir, { recursive: true });
+    sh("git", ["init", "-q", project]);
+
+    const { status, report } = installer("install", repoRoot, ["--project", project]);
+    console.log("project install:", JSON.stringify(report.homes.map(({ dir, steps }) => ({ dir, steps }))));
+    expect(failing(report.homes.flatMap((h) => h.checks))).toEqual([]);
+    expect(status).toBe(0);
+    expect(report.project).toEqual({ scope: "project", dir: project });
+    const claudeSettings = join(project, ".claude/settings.json");
+    expect(row(report, ".claude").steps).toEqual([
+      `added the t3-pstack marketplace from ${source()} to ${claudeSettings}`,
+      `installed ${version} at project scope`,
+    ]);
+    expect(row(report, ".codex").steps).toEqual([
+      `added the t3-pstack marketplace from ${source()}`,
+      `installed ${version}`,
+      "left it disabled outside the projects that enable it",
+      `trusted ${project} in ${join(home, ".codex/config.toml")}, so Codex reads its .codex/config.toml`,
+      `enabled it in ${join(project, ".codex/config.toml")}`,
+      `trusted hook ${HOOK} (was untrusted)`,
+    ]);
+    expect(JSON.parse(readFileSync(claudeSettings, "utf8")).enabledPlugins).toEqual({ "t3-pstack@t3-pstack": true });
+    expect(existsSync(join(home, ".claude/settings.json"))).toBe(false);
+
+    const inside = await probe(join(home, ".codex"), project);
+    expect(inside.hookEvents).toEqual(["hook/started", "hook/completed"]);
+    expect(inside.routedMessages).toBe(1);
+    const outside = await probe(join(home, ".codex"), elsewhere);
+    expect(outside.hookEvents).toEqual([]);
+    expect(outside.routedMessages).toBe(0);
+  }, 300_000);
+
+  test("a second install changes nothing, and the global doctor sees no global install", () => {
+    const before = snapshot();
+    const { status, report } = installer("update", repoRoot, ["--project", project]);
+    expect(status).toBe(0);
+    expect(report.homes.flatMap((h) => h.steps)).toEqual([]);
+    expect(snapshot()).toEqual(before);
+    expect(installer("doctor", repoRoot, ["--project", project]).status).toBe(0);
+    const global = installer("doctor").report;
+    // Outside the project the plugin is off, so Codex lists none of its hooks.
+    expect(failing(row(global, ".codex").checks)).toEqual(["enabled: no", "session-start hook trusted: no t3-pstack hook listed"]);
+  }, 300_000);
+
+  test("--local writes the project's local settings, and keeps the Codex config's other lines", () => {
+    const local = join(root, "local");
+    mkdirSync(join(local, ".codex"), { recursive: true });
+    writeFileSync(join(local, ".codex/config.toml"), 'model = "o3"\n');
+    const { status, report } = installer("install", repoRoot, ["--local", local]);
+    expect(failing(report.homes.flatMap((h) => h.checks))).toEqual([]);
+    expect(status).toBe(0);
+    expect(existsSync(join(local, ".claude/settings.json"))).toBe(false);
+    expect(JSON.parse(readFileSync(join(local, ".claude/settings.local.json"), "utf8")).enabledPlugins).toEqual({
+      "t3-pstack@t3-pstack": true,
+    });
+    expect(readFileSync(join(local, ".codex/config.toml"), "utf8")).toBe('model = "o3"\n\n[plugins."t3-pstack@t3-pstack"]\nenabled = true\n');
+  }, 300_000);
+
+  test("trusts neither the project nor a hook when the project's own config names another marketplace", () => {
+    const counterfeit = pluginCopy(join(root, "counterfeit"));
+    const other = join(root, "other");
+    mkdirSync(join(other, ".codex"), { recursive: true });
+    writeFileSync(join(other, ".codex/config.toml"), `[marketplaces.t3-pstack]\nsource_type = "local"\nsource = "${counterfeit}"\n`);
+    const { status, report } = installer("install", repoRoot, ["--project", other]);
+    expect(status).toBe(1);
+    expect(row(report, ".codex").steps).toEqual([]);
+    expect(failing(row(report, ".codex").checks)[0]).toBe(
+      `marketplace: ${source()}, ${counterfeit}, which is neither chhoumann/t3-pstack nor --source`,
+    );
+  }, 300_000);
+
+  test("registers the marketplace in every fresh Claude Code home, at either scope", () => {
+    for (const scope of ["project", "local"]) {
+      const shared = join(root, `shared-${scope}`);
+      mkdirSync(shared, { recursive: true });
+      const homes = [`claude-a-${scope}`, `claude-b-${scope}`];
+      const { status, report } = installer("install", repoRoot, [`--${scope}`, shared, ...homes.flatMap((h) => ["--claude-home", join(root, h)])]);
+      for (const h of homes) expect(failing(row(report, `../${h}`).checks)).toEqual([]);
+      expect(status).toBe(0);
+    }
+  }, 300_000);
+
+  test("adds the home's own marketplace when only the project's config names it", () => {
+    const codexHome = join(root, "codex-fresh");
+    const named = join(root, "named");
+    mkdirSync(join(named, ".codex"), { recursive: true });
+    writeFileSync(join(named, ".codex/config.toml"), `[marketplaces.t3-pstack]\nsource_type = "local"\nsource = "${source()}"\n`);
+    const { status, report } = installer("install", repoRoot, ["--project", named, "--codex-home", codexHome]);
+    expect(failing(row(report, "../codex-fresh").checks)).toEqual([]);
+    expect(status).toBe(0);
+    expect(row(report, "../codex-fresh").steps.slice(0, 2)).toEqual([`added the t3-pstack marketplace from ${source()}`, `installed ${version}`]);
+  }, 300_000);
+
+  test("a later global install enables the plugin everywhere, and a project install keeps it so", () => {
+    expect(installer("install").status).toBe(0);
+    const next = join(root, "next");
+    mkdirSync(next, { recursive: true });
+    const { status, report } = installer("install", repoRoot, ["--project", next]);
+    expect(status).toBe(0);
+    expect(row(report, ".codex").steps).not.toContain("left it disabled outside the projects that enable it");
+    expect(installer("doctor").status).toBe(0);
   }, 300_000);
 });
