@@ -80,7 +80,7 @@
     },
     "plugins/pstack/skills/poteto-mode/scripts/worktree-audit.sh": {
       "kind": "policy",
-      "why": "Holds a worktree with untracked scratch, with an ignored file whose last component is not a named build or cache directory, with a commit only HEAD or its reflog reaches, or that git cannot read, the ignored and reflog checks ported from Michael Denyer's pstack-claude #277, passes --untracked-files so a status.showUntrackedFiles=no config hides nothing, fetches the base only under --fetch, and sets GIT_OPTIONAL_LOCKS=0 so its git status never rewrites a worktree's index.",
+      "why": "Holds a worktree with untracked scratch, with an ignored file whose last component is not a named build or cache directory, with a commit only HEAD or its reflog reaches, or that git cannot read, the ignored and reflog checks ported from Michael Denyer's pstack-claude #277, passes --untracked-files so a status.showUntrackedFiles=no config hides nothing, fetches the base only under --fetch, sets GIT_OPTIONAL_LOCKS=0 so its git status never rewrites a worktree's index, and reads each worktree path whole, so a path with a space is not cut at the space.",
       "since": "2.0.0-rc.7",
       "upstream": "https://github.com/cursor/plugins/issues/449"
     },
