@@ -20,7 +20,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { doctorClaude, installClaude, syncScopedRecords } from "../tools/install/claude.mjs";
@@ -351,6 +351,35 @@ describe("--source", () => {
     expect(parseSource("https://github.com/chhoumann/t3-pstack", "/home/u").key).toBe(github.key);
     expect(() => parseSource("./missing", cwd)).toThrow("--source ./missing: not owner/repo, a Git URL, or an existing directory");
   });
+
+  test("is in every fix doctor prints, and a GitHub --source runs that repository's installer", () => {
+    const claude = fakeClaude();
+    const doctor = (source) => {
+      const r = spawnSync(process.execPath, [join(repoRoot, "tools/install.mjs"), "doctor", "--source", source, "--json"], {
+        env: { HOME: tmp(), PATH: join(claude.bin, "..") },
+        encoding: "utf8",
+      });
+      return JSON.parse(r.stdout).homes.find((row) => row.harness === "claude").checks;
+    };
+    expect(doctor("someone/t3-pstack")).toEqual([
+      {
+        name: "installed",
+        ok: false,
+        detail: "the home does not exist",
+        fix: "rerun `npx -y github:someone/t3-pstack install --source someone/t3-pstack`",
+      },
+    ]);
+    const local = resolve(repoRoot);
+    expect(doctor(local)[0].fix).toBe(`rerun \`npx -y github:chhoumann/t3-pstack install --source ${local}\``);
+
+    const fork = parseSource("someone/t3-pstack", "/home/u");
+    const home = { harness: "claude", dir: tmp(), from: ["default"], bin: "claude" };
+    const fixes = doctorClaude(home, { ...context, source: fork, trusted: new Set([github.key, fork.key]) })
+      .filter((c) => !c.ok)
+      .map((c) => c.fix);
+    expect(fixes).toEqual(Array(4).fill("rerun `npx -y github:someone/t3-pstack install --source someone/t3-pstack`"));
+  });
+
 });
 
 describe("files the installer replaces", () => {
@@ -399,7 +428,7 @@ describe("the model sheet", () => {
     expect(existsSync(join(root, ".claude-never-run"))).toBe(false);
 
     expect(moveSheet(sheet, homes)).toEqual([]);
-    expect(doctorSheet(sheet, homes, { catalog: null, roles, tiers })).toEqual([
+    expect(doctorSheet(sheet, homes, { catalog: null, roles, tiers, hint: FIX })).toEqual([
       { name: "machine sheet valid", ok: true, detail: "every line parses (pass --catalog to check targets)" },
       { name: "home sheets", ok: true, detail: "none differ from it" },
     ]);
@@ -457,7 +486,7 @@ describe("the model sheet", () => {
 
     expect(moveSheet(sheet, homes)).toEqual([]);
     expect(existsSync(sheet)).toBe(false);
-    expect(doctorSheet(sheet, homes, { catalog: null, roles, tiers })).toEqual([
+    expect(doctorSheet(sheet, homes, { catalog: null, roles, tiers, hint: FIX })).toEqual([
       {
         name: "machine sheet",
         ok: false,
@@ -479,7 +508,7 @@ describe("the model sheet", () => {
       `linked ${join(root, ".codex-pool/t3-pstack-models.md")} to it`,
     ]);
     expect(lstatSync(join(root, ".codex/t3-pstack-models.md")).isSymbolicLink()).toBe(false);
-    expect(doctorSheet(sheet, homes, { catalog: null, roles, tiers })[1]).toEqual({
+    expect(doctorSheet(sheet, homes, { catalog: null, roles, tiers, hint: FIX })[1]).toEqual({
       name: "home sheets",
       ok: false,
       detail: `${join(root, ".codex/t3-pstack-models.md")} differ from the machine sheet`,
@@ -489,7 +518,7 @@ describe("the model sheet", () => {
 
   test("doctor warns without a sheet and fails on a malformed one", () => {
     const { homes, sheet } = machine();
-    expect(doctorSheet(sheet, homes, { catalog: null, roles, tiers })).toEqual([
+    expect(doctorSheet(sheet, homes, { catalog: null, roles, tiers, hint: FIX })).toEqual([
       {
         name: "machine sheet",
         ok: false,
@@ -500,7 +529,7 @@ describe("the model sheet", () => {
     ]);
     mkdirSync(join(sheet, ".."), { recursive: true });
     writeFileSync(sheet, "bug-fix: claude-opus\nhow critics: inherit-parent\n");
-    expect(doctorSheet(sheet, homes, { catalog: null, roles, tiers })[0]).toEqual({
+    expect(doctorSheet(sheet, homes, { catalog: null, roles, tiers, hint: FIX })[0]).toEqual({
       name: "machine sheet valid",
       ok: false,
       detail: 'bug-fix: "claude-opus" does not start with <providerInstanceId>/<modelId>; "how critics" is not a pstack role',

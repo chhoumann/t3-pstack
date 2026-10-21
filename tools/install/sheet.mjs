@@ -7,7 +7,7 @@ import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSyn
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { checkSheet, parseSheet } from "../../plugins/pstack/skills/setup-pstack/scripts/t3-sheet.mjs";
-import { check, INSTALL_HINT, tempBeside, writeAtomic } from "./common.mjs";
+import { check, tempBeside, writeAtomic } from "./common.mjs";
 
 export const HOME_SHEET = "t3-pstack-models.md";
 const SETUP_HINT = "run /t3-pstack:setup-pstack in a T3 thread";
@@ -63,7 +63,7 @@ export function moveSheet(sheet, homes) {
   return steps;
 }
 
-export function doctorSheet(sheet, homes, { catalog, roles, tiers }) {
+export function doctorSheet(sheet, homes, { catalog, roles, tiers, hint }) {
   const old = homeSheets(homes).filter(isFile);
   if (!isFile(sheet)) {
     const differ = new Set(old.map((path) => readFileSync(path, "utf8"))).size > 1;
@@ -73,7 +73,7 @@ export function doctorSheet(sheet, homes, { catalog, roles, tiers }) {
           "machine sheet",
           false,
           `missing; ${old.join(", ")} ${differ ? "differ, so the installer leaves them" : "not moved yet"}`,
-          differ ? `keep one, then ${INSTALL_HINT}` : INSTALL_HINT,
+          differ ? `keep one, then ${hint}` : hint,
         ),
       ];
     }
@@ -96,7 +96,7 @@ export function doctorSheet(sheet, homes, { catalog, roles, tiers }) {
       "home sheets",
       shadowing.length === 0,
       shadowing.length ? `${shadowing.join(", ")} differ from the machine sheet` : "none differ from it",
-      `move each aside, then ${INSTALL_HINT} to link it`,
+      `move each aside, then ${hint} to link it`,
     ),
   ];
 }
