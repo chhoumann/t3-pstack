@@ -20,6 +20,7 @@ import { deriveT3 } from "../tools/derive-t3.mjs";
 import { loadModels } from "../tools/generate.mjs";
 import {
   applySubstitutions,
+  bootstrapComponent,
   changedLines,
   classify,
   denylistHits,
@@ -1412,6 +1413,22 @@ describe("syncComponent", () => {
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("s.md: git merge-file reported conflicts (exit 1) but printed no markers");
     expect(readFileSync(join(localDir, "s.md"), "utf8")).toBe("port\n");
+  });
+});
+
+describe("bootstrapComponent", () => {
+  test("a local symlink at a directory above upstream paths is reported at the link, and nothing is written through it", () => {
+    const outside = tree({ "arena/SKILL.md": "outside\n" });
+    const newDir = tree({ "skills/arena/SKILL.md": "upstream\n", "skills/arena/ref.md": "ref\n", "skills/how/SKILL.md": "how\n" });
+    const localDir = tree({ "skills/how/SKILL.md": "old\n" });
+    symlinkSync(join(outside, "arena"), join(localDir, "skills/arena"));
+
+    const report = bootstrapComponent({ newDir, localDir, rules: [] });
+
+    expect(report.symlinks).toEqual(["skills/arena"]);
+    expect(readdirSync(join(outside, "arena"))).toEqual(["SKILL.md"]);
+    expect(readFileSync(join(outside, "arena/SKILL.md"), "utf8")).toBe("outside\n");
+    expect(readFileSync(join(localDir, "skills/how/SKILL.md"), "utf8")).toBe("old\n");
   });
 });
 

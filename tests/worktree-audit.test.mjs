@@ -43,8 +43,8 @@ function commit(cwd, name) {
   git(cwd, "commit", "-q", "-m", name);
 }
 
-function createFixture() {
-  const root = mkdtempSync(join(tmpdir(), "worktree-audit-"));
+function createFixture(prefix = "worktree-audit-") {
+  const root = mkdtempSync(join(tmpdir(), prefix));
   roots.push(root);
   const repo = join(root, "repo");
   mkdirSync(repo);
@@ -113,6 +113,15 @@ printf '%s' '[{"number":7,"state":"MERGED","headRefName":"shipped"},{"number":8,
     "in-review": { pr: "#8/open", lastChat: "-", bucket: "hold-open-pr" },
     "no-pr": { pr: "-", lastChat: "-", bucket: "review" },
   });
+});
+
+test("lists every worktree when the checkout and its worktrees sit under a path with spaces", () => {
+  const fixture = createFixture("worktree audit ");
+  writeFileSync(join(addWorktree(fixture, "notes"), "notes.md"), "run log\n");
+  addWorktree(fixture, "idle");
+  const rows = runAudit(fixture);
+  expect(Object.keys(rows).sort()).toEqual(["idle", "notes"]);
+  expect([rows.notes.dirty, rows.notes.bucket]).toEqual(["scratch:1", "hold-scratch"]);
 });
 
 test("an ignored file outside build and cache directories holds the worktree, ignored dependencies do not", () => {
