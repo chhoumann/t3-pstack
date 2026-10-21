@@ -380,6 +380,24 @@ describe("--source", () => {
     expect(fixes).toEqual(Array(4).fill("rerun `npx -y github:someone/t3-pstack install --source someone/t3-pstack`"));
   });
 
+  test("leaves a home on chhoumann/t3-pstack where it is, and doctor warns with the commands that switch it", () => {
+    const { dir } = claudeHome();
+    syncScopedRecords(dir);
+    const fork = parseSource("someone/t3-pstack", "/home/u");
+    const forked = { ...context, source: fork, trusted: new Set([github.key, fork.key]) };
+    const claude = fakeClaude();
+    const home = { harness: "claude", dir, from: ["default"], bin: claude.bin };
+    expect(installClaude(home, forked)).toEqual(["turned on marketplace auto-update"]);
+    expect(doctorClaude(home, forked)[0]).toEqual({
+      name: "marketplace",
+      ok: false,
+      warn: true,
+      detail: "chhoumann/t3-pstack, not --source someone/t3-pstack",
+      fix:
+        `to install from someone/t3-pstack, remove it with \`CLAUDE_CONFIG_DIR=${dir} claude plugin marketplace remove t3-pstack\`, ` +
+        "then rerun `npx -y github:someone/t3-pstack install --source someone/t3-pstack`",
+    });
+  });
 });
 
 describe("files the installer replaces", () => {

@@ -10,7 +10,9 @@
 // Each home's t3-pstack marketplace must come from chhoumann/t3-pstack or from
 // this run's --source. A home whose marketplace has another source, such as a
 // local --source from an earlier run, gets nothing installed and no hook
-// trusted, and doctor fails it with that source.
+// trusted, and doctor fails it with that source. A run never switches a
+// home's source: one from chhoumann/t3-pstack stays on it under another
+// --source, and doctor warns with the commands that switch it.
 //
 //   npx -y github:chhoumann/t3-pstack <install|update|doctor>
 //     --source <owner/repo|git URL|dir>   marketplace source, default chhoumann/t3-pstack

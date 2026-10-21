@@ -69,16 +69,28 @@ export const trustedOnly = (sources, trusted) => sources.length > 0 && sources.e
 
 // The marketplace check both doctors run. A marketplace named t3-pstack from
 // any source but the trusted ones is not installed from, nor its hook trusted.
+// One from chhoumann/t3-pstack, on a run whose --source names another, is
+// still installed from, and the check warns that the run did not switch it.
 export function marketplaceCheck(sources, { source, trusted }, remove) {
   const hint = installHint(source);
   if (!sources.length) return check("marketplace", false, "none", hint);
   const labels = [...new Set(sources.map((s) => s.label))].join(", ");
   const foreign = sources.filter((s) => !trusted.has(s.key));
+  if (foreign.length) {
+    return check(
+      "marketplace",
+      false,
+      `${labels}, which is neither ${HOME_REPO} nor --source`,
+      `if you trust it, rerun with --source ${foreign[0].label}; otherwise ${remove}, then ${hint}`,
+    );
+  }
+  const elsewhere = !sources.some((s) => s.key === source.key);
   return check(
     "marketplace",
-    foreign.length === 0,
-    foreign.length ? `${labels}, which is neither ${HOME_REPO} nor --source` : labels,
-    `if you trust it, rerun with --source ${foreign[0]?.label}; otherwise ${remove}, then ${hint}`,
+    !elsewhere,
+    elsewhere ? `${labels}, not --source ${source.label}` : labels,
+    `to install from ${source.label}, ${remove}, then ${hint}`,
+    elsewhere,
   );
 }
 
