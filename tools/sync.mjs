@@ -264,6 +264,8 @@ export function isExcluded(rel, exclude) {
 
 const gitMode = (mode) => (mode & 0o100 ? 0o755 : 0o644);
 
+const dirsAbove = (rel) => rel.split("/").slice(0, -1).map((_, i, parts) => parts.slice(0, i + 1).join("/"));
+
 const lazyFile = (mode, load) => {
   let loaded;
   return {
@@ -391,7 +393,6 @@ export function syncComponent({
   const elsewhere = new Set(carriedElsewhere);
   // A port link where upstream has a directory is reported at the link, and
   // nothing under it is read or written, since each write would land in its target.
-  const dirsAbove = (rel) => rel.split("/").slice(0, -1).map((_, i, parts) => parts.slice(0, i + 1).join("/"));
   const upstreamDirs = new Set([...oldPaths, ...newPaths].filter((rel) => !isExcluded(rel, exclude)).flatMap(dirsAbove));
   const isLink = (rel) => localPaths.has(rel) && lstatSync(join(localDir, rel)).isSymbolicLink();
   const outcomeOf = (rel) => {
@@ -515,13 +516,19 @@ export function unusedRules(rules, trees) {
 // Regenerate one component from upstream at a SHA: every carried file in its
 // derived form, except a declared fork that the port already holds. Returns
 // the files it writes, the forks it keeps, and denylist hits, which block
-// every write, as does a symlink on either side.
+// every write, as does a symlink on either side or at a local directory above
+// a carried path.
 export function bootstrapComponent({ newDir, localDir, rules, denylist = [], exclude = [], derive = (_, t) => t, forks = new Map(), dryRun = false }) {
   const report = { written: [], kept: [], symlinks: [], hits: [] };
   const writes = [];
   for (const file of walk(newDir)) {
     const rel = relative(newDir, file);
     if (isExcluded(rel, exclude)) continue;
+    const link = dirsAbove(rel).find((dir) => lstatIn(localDir, dir)?.isSymbolicLink());
+    if (link) {
+      if (!report.symlinks.includes(link)) report.symlinks.push(link);
+      continue;
+    }
     const local = lstatSync(join(localDir, rel), { throwIfNoEntry: false });
     if (lstatSync(file).isSymbolicLink() || local?.isSymbolicLink()) {
       report.symlinks.push(rel);
