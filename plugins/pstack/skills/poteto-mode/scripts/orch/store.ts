@@ -17,6 +17,7 @@ import { basename, dirname, join, resolve } from "node:path";
 const UNIT_HEADER = "id\ttrack\tstate\tbranch\tpr\tsha\tbrief";
 const LEDGER_HEADER = "pr\tsha\tverdict\tevidence\tverifier\tts";
 const LOCK_FILE = ".orch.lock";
+const TAKEOVER_DIR = ".orch.lock.takeover";
 
 export type Verdict =
   | "live-ui-verified"
@@ -384,6 +385,7 @@ async function acquireLock(
   options: OpenStoreOptions
 ): Promise<() => Promise<void>> {
   const path = join(store, LOCK_FILE);
+  const takeover = join(store, TAKEOVER_DIR);
   const pid = String(process.pid);
   const create = async (): Promise<void> => {
     const handle = await open(path, "wx");
@@ -391,17 +393,61 @@ async function acquireLock(
     await handle.close();
   };
 
-  const takeOver = async (): Promise<void> => {
-    await unlink(path);
+  // POSIX cannot unlink a file only if it still names the holder judged
+  // replaceable, so the read and unlink run behind a claim: a directory that
+  // holds one file named for the claimant's pid. rename cannot replace a
+  // directory that holds a file, so one writer takes over at a time, and a
+  // dead claimant's file is removed by name, which cannot remove a live one's.
+  const takeOver = async (holder: string): Promise<void> => {
+    const staged = `${takeover}.${pid}.${randomUUID()}`;
+    await mkdir(staged);
     try {
-      await create();
-    } catch (retryError) {
-      if (errorCode(retryError) === "EEXIST") {
-        const retryHolder =
-          (await readFile(path, "utf8")).trim() || "unknown";
-        throw new UserError(`store lock held by pid ${retryHolder}`);
+      await writeFile(join(staged, pid), "");
+      for (const claimant of await readdir(takeover).catch(() => [])) {
+        if (holderIsDead(claimant)) {
+          await rm(join(takeover, claimant), { force: true });
+        }
       }
-      throw retryError;
+      try {
+        await rename(staged, takeover);
+      } catch (error) {
+        const code = errorCode(error);
+        if (code === "ENOTEMPTY" || code === "EEXIST") {
+          throw new UserError(
+            `store lock held by pid ${holder} is being replaced by another writer; retry`
+          );
+        }
+        throw error;
+      }
+      try {
+        const current = await readFile(path, "utf8").then(
+          (text) => text.trim() || "unknown",
+          (error: unknown) => {
+            if (errorCode(error) === "ENOENT") {
+              return null;
+            }
+            throw error;
+          }
+        );
+        if (current !== null) {
+          if (current !== holder) {
+            throw new UserError(`store lock held by pid ${current}`);
+          }
+          await unlink(path);
+        }
+        await create();
+      } catch (retryError) {
+        if (errorCode(retryError) === "EEXIST") {
+          const retryHolder =
+            (await readFile(path, "utf8")).trim() || "unknown";
+          throw new UserError(`store lock held by pid ${retryHolder}`);
+        }
+        throw retryError;
+      } finally {
+        await rename(takeover, staged);
+      }
+    } finally {
+      await rm(staged, { recursive: true, force: true });
     }
   };
 
@@ -419,10 +465,10 @@ async function acquireLock(
     }
     if (holderIsDead(holder)) {
       options.onStaleLock?.(holder);
-      await takeOver();
+      await takeOver(holder);
     } else if (options.force) {
       options.onLockStolen?.(holder);
-      await takeOver();
+      await takeOver(holder);
     } else {
       throw new UserError(`store lock held by pid ${holder}`);
     }
@@ -1119,12 +1165,16 @@ function branchPullRequest({
       `branch ${branch} has no pull request; open one with ${forge} pr create, or resolve the frontier from a branch whose chain is fully submitted`
     );
   }
-  if (rows.length > 1) {
+  // A reused branch keeps its merged and closed PRs, so an open PR is the
+  // branch's current one.
+  const open = rows.filter((item) => item.state === "OPEN");
+  const current = open.length > 0 ? open : rows;
+  if (current.length > 1) {
     throw new UserError(
-      `branch ${branch} has multiple pull requests (${rows.map((item) => `#${item.pr}`).join(", ")}); close the stale ones first`
+      `branch ${branch} has multiple pull requests (${current.map((item) => `#${item.pr}`).join(", ")}); close the stale ones first`
     );
   }
-  return row;
+  return current[0];
 }
 
 function openChildren({

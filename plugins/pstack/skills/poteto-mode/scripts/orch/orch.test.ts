@@ -8,7 +8,7 @@ import {
   rm,
   writeFile,
 } from "node:fs/promises";
-import { realpathSync } from "node:fs";
+import { realpathSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -436,6 +436,60 @@ describe("Store", () => {
     expect(await readdir(directory)).not.toContain(".orch.lock");
   });
 
+  it("keeps a lock another writer took over from the same dead holder", async () => {
+    const { directory } = await initializedStore();
+    const lock = join(directory, ".orch.lock");
+    const exited = Bun.spawn(["true"]);
+    await exited.exited;
+    await writeFile(lock, `${exited.pid}\n`);
+    const rival = Bun.spawn(["sleep", "30"]);
+
+    try {
+      const late = useStore(directory, {
+        onStaleLock: () => {
+          unlinkSync(lock);
+          writeFileSync(lock, `${rival.pid}\n`, { flag: "wx" });
+        },
+      });
+      await expect(
+        late.units.add({ id: "u1", track: "build" })
+      ).rejects.toThrow(`store lock held by pid ${rival.pid}`);
+      expect(await readFile(lock, "utf8")).toBe(`${rival.pid}\n`);
+    } finally {
+      rival.kill();
+      await rival.exited;
+    }
+  });
+
+  it("serializes stale-lock takeovers behind a claim a dead writer cannot hold", async () => {
+    const { directory } = await initializedStore();
+    const exited = Bun.spawn(["true"]);
+    await exited.exited;
+    await writeFile(join(directory, ".orch.lock"), `${exited.pid}\n`);
+    const claim = join(directory, ".orch.lock.takeover");
+    await mkdir(claim);
+    const claimant = Bun.spawn(["sleep", "30"]);
+    await writeFile(join(claim, String(claimant.pid)), "");
+
+    try {
+      await expect(
+        useStore(directory).units.add({ id: "u1", track: "build" })
+      ).rejects.toThrow(
+        `store lock held by pid ${exited.pid} is being replaced by another writer; retry`
+      );
+    } finally {
+      claimant.kill();
+      await claimant.exited;
+    }
+
+    const recovered = useStore(directory);
+    expect(
+      await recovered.units.add({ id: "u1", track: "build" })
+    ).toMatchObject({ id: "u1" });
+    expect(await readdir(directory)).not.toContain(".orch.lock.takeover");
+    await recovered.close();
+  });
+
   it("blocks a writer and steals the pid lock only with force", async () => {
     const { directory, store } = await initializedStore();
     await store.close();
@@ -569,6 +623,65 @@ describe("Store", () => {
               prs: [10, 10],
             })
           ).rejects.toThrow("--prs must not contain duplicates");
+        },
+      });
+    });
+
+    it(`resolves a ${forge} branch reused after a merged and a closed PR to its open PR`, async () => {
+      const { directory, store } = await initializedStore();
+      const stack = await makeGitStack(directory);
+
+      await withFakeForge({
+        directory,
+        forge,
+        currentRows: forgeRows(forge, [
+          {
+            number: 11,
+            state: "open",
+            head: "stack/open",
+            base: "stack/closed",
+          },
+          { number: 9, state: "closed", head: "stack/open", base: "main" },
+          { number: 8, state: "merged", head: "stack/open", base: "main" },
+        ]),
+        operation: async () => {
+          expect(
+            (await store.frontier.set({ repo: stack.repo, forge })).prs.map(
+              (row) => row.pr
+            )
+          ).toEqual([10, 13, 11, 14]);
+        },
+      });
+    });
+
+    it(`rejects a ${forge} branch with more than one open PR`, async () => {
+      const { directory, store } = await initializedStore();
+      const stack = await makeGitStack(directory);
+
+      await withFakeForge({
+        directory,
+        forge,
+        currentRows: forgeRows(forge, [
+          {
+            number: 12,
+            state: "draft",
+            head: "stack/open",
+            base: "stack/closed",
+          },
+          {
+            number: 11,
+            state: "open",
+            head: "stack/open",
+            base: "stack/closed",
+          },
+          { number: 9, state: "closed", head: "stack/open", base: "main" },
+        ]),
+        operation: async () => {
+          await expect(
+            store.frontier.set({ repo: stack.repo, forge })
+          ).rejects.toThrow(
+            "branch stack/open has multiple pull requests (#12, #11); close the stale ones first"
+          );
         },
       });
     });
