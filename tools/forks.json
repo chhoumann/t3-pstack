@@ -50,7 +50,7 @@
     },
     "plugins/pstack/skills/poteto-mode/scripts/watch-pr/github.ts": {
       "kind": "policy",
-      "why": "Gives the gh reader the reviewActivity method that settle.ts uses, and carries two fixes from Michael Denyer's pstack-claude: a completed check that gh buckets as pending, such as STALE, reads as failed instead of pending forever (pstack-claude #97), and a head with no checks configured reads as such when gh reports none and the head has no rollup (pstack-claude #153).",
+      "why": "Gives the gh reader the reviewActivity method that settle.ts uses, and carries two fixes from Michael Denyer's pstack-claude: a completed check that gh buckets as pending, such as STALE, reads as failed instead of pending forever (pstack-claude #97), and a head with no checks configured reads as such when gh reports none and the head has no rollup (pstack-claude #153); its stack discovery never takes a PR whose head is in another repository as a parent and stops at a branch cycle, so an open PR from a fork's main cannot loop it forever.",
       "since": "2.0.0-rc.1",
       "upstream": "not-proposed"
     },
@@ -74,7 +74,7 @@
     },
     "plugins/pstack/skills/poteto-mode/scripts/watch-pr/types.ts": {
       "kind": "policy",
-      "why": "Adds the settle state, decision, and reader method that settle.ts defines, and the review-required and merge-blocked gates, the no-checks read and CI state, and the confirming-block wait and timeout reason that the fixes from Michael Denyer's pstack-claude add.",
+      "why": "Adds the settle state, decision, and reader method that settle.ts defines, and the review-required and merge-blocked gates, the no-checks read and CI state, and the confirming-block wait and timeout reason that the fixes from Michael Denyer's pstack-claude add; it also adds the isCrossRepository flag on an open PR that stack discovery reads.",
       "since": "2.0.0-rc.1",
       "upstream": "not-proposed"
     },

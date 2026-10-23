@@ -513,10 +513,15 @@ export class GhGitHubReader implements T.GitHubReader {
       "--limit",
       "300",
       "--json",
-      "number,headRefName,baseRefName",
+      "number,headRefName,baseRefName,isCrossRepository",
     ]);
     return list(value, "open PRs").map((item, index) => {
       const object = record(item, `open PRs[${index}]`);
+      if (typeof object.isCrossRepository !== "boolean")
+        missing(
+          `open PRs[${index}].isCrossRepository`,
+          object.isCrossRepository
+        );
       return {
         number: parsePrNumber(object.number, `open PRs[${index}].number`),
         headRefName: string(
@@ -527,6 +532,7 @@ export class GhGitHubReader implements T.GitHubReader {
           object.baseRefName,
           `open PRs[${index}].baseRefName`
         ),
+        isCrossRepository: object.isCrossRepository,
       };
     });
   }
@@ -705,7 +711,11 @@ export function orderStack(
   open: readonly T.OpenPullRequest[]
 ): T.NonEmpty<T.PrContext> {
   const byNumber = new Map(open.map((pr) => [pr.number, pr]));
-  const byHead = new Map(open.map((pr) => [pr.headRefName, pr]));
+  const byHead = new Map(
+    open
+      .filter((pr) => pr.isCrossRepository !== true)
+      .map((pr) => [pr.headRefName, pr])
+  );
   const children = new Map<string, T.OpenPullRequest[]>();
   for (const pr of open)
     children.set(pr.baseRefName, [...(children.get(pr.baseRefName) ?? []), pr]);
@@ -717,7 +727,8 @@ export function orderStack(
   let current = start;
   while (byHead.has(current.baseRefName)) {
     const parent = byHead.get(current.baseRefName);
-    if (parent === undefined) break;
+    if (parent === undefined || parent === start || down.includes(parent))
+      break;
     down.push(parent);
     current = parent;
   }
@@ -727,6 +738,7 @@ export function orderStack(
   ]);
   const up: T.OpenPullRequest[] = [];
   const visit = (parent: T.OpenPullRequest): void => {
+    if (parent.isCrossRepository === true) return;
     for (const child of children.get(parent.headRefName) ?? []) {
       if (seen.has(child.number)) continue;
       seen.add(child.number);

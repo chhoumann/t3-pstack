@@ -55,6 +55,8 @@ export interface OpenPullRequest {
   readonly number: PrNumber;
   readonly headRefName: string;
   readonly baseRefName: string;
+  // A head branch in another repository is never the base of a PR here.
+  readonly isCrossRepository?: boolean;
 }
 export interface ReviewComment {
   readonly authorLogin: string | null;
