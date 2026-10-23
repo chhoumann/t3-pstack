@@ -2,7 +2,7 @@
   "pstack": {
     "plugins/pstack/skills/poteto-mode/SKILL.md": {
       "kind": "policy",
-      "why": "Carries four rules from Michael Denyer's pstack-claude in T3 wording: load a managed platform's skill before deploying, stop an abandoned agent whose writes could overlap its replacement's with task_cancel and confirm with task_status that it stopped, which Autopilot-full's immediate replacement of a stuck agent overrides, keep a review gate closed while no independent reviewer can run, and keep the todolist in .audit/<task-slug>.todo.md when the session has no task tool.",
+      "why": "Carries four rules from Michael Denyer's pstack-claude in T3 wording: load a managed platform's skill before deploying, stop an abandoned agent whose writes could overlap its replacement's with task_cancel and confirm with task_status that it stopped, which Autopilot-full's immediate replacement of a stuck agent overrides, keep a review gate closed while no independent reviewer can run, and keep the todolist in .audit/<task-slug>.todo.md when the session has no task tool. It also narrows the follow-up rule so a costly checkout alone hands its worktree path to a fresh agent instead of reusing the agent.",
       "since": "2.0.0-rc.2",
       "upstream": "not-proposed"
     },
@@ -12,10 +12,22 @@
       "since": "2.0.0-rc.2",
       "upstream": "not-proposed"
     },
+    "plugins/pstack/skills/poteto-mode/playbooks/hillclimb.md": {
+      "kind": "policy",
+      "why": "Has step 1 read a readable, permitted reference rule before fitting to it, with fits kept before that reading labelled provisional but never blocked, and has step 2 put a reference and its target through one measurement path over the full span of workload conditions.",
+      "since": "2.0.0-rc.19",
+      "upstream": "not-proposed"
+    },
     "plugins/pstack/skills/poteto-mode/playbooks/opening-a-pr.md": {
       "kind": "policy",
       "why": "Carries the rule from Michael Denyer's pstack-claude that every live agent holding a worktree is stopped, and the stop confirmed, before a commit, merge, or deploy from it, and drops the reset --hard between delegates on one branch so that each gets its own worktree.",
       "since": "2.0.0-rc.2",
+      "upstream": "not-proposed"
+    },
+    "plugins/pstack/skills/poteto-mode/playbooks/orchestrate.md": {
+      "kind": "policy",
+      "why": "Has step 2 confirm a verify control skill or one documented verify command before the pilot, accepts a ranked list or an evidenced no-difference result from a question-answering unit, gates a rate-limit relaunch on task_status, and gives each standing order a supersedes or expires note, with superseded orders rewritten in place and user-written orders removed only with the user's okay.",
+      "since": "2.0.0-rc.19",
       "upstream": "not-proposed"
     },
     "plugins/pstack/skills/poteto-mode/playbooks/shipping.md": {
