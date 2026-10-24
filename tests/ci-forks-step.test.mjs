@@ -18,7 +18,7 @@ function runStep(upstream, failing = "") {
     if (upstream !== null) writeFileSync(join(dir, "tools/upstream.json"), upstream);
     writeFileSync(calls, "");
     writeFileSync(join(dir, "step.sh"), step.run);
-    writeFileSync(join(dir, "bin/bun"), '#!/bin/bash\necho "$2 $3" >> "$CALLS"\n[ "$2" != "$FAILING" ]\n', { mode: 0o755 });
+    writeFileSync(join(dir, "bin/bun"), '#!/usr/bin/env bash\necho "$2 $3" >> "$CALLS"\n[ "$2" != "$FAILING" ]\n', { mode: 0o755 });
     const { status, stdout } = spawnSync("bash", ["-e", "step.sh"], {
       cwd: dir,
       env: { PATH: `${join(dir, "bin")}:${process.env.PATH}`, RUNNER_TEMP: dir, CALLS: calls, FAILING: failing },

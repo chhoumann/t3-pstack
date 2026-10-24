@@ -8,6 +8,10 @@
 // its command runs. Codex's own trust covers the entry alone, and the script
 // changes with each release, so the marketplace source check is what vouches
 // for the script.
+//
+// Codex has no plugin scopes, so a project install enables the plugin in the
+// project's .codex/config.toml, a layer Codex reads only for a project the
+// home trusts.
 import { spawn } from "node:child_process";
 import { closeSync, constants, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -16,7 +20,7 @@ import { hookDigest } from "../plugin.mjs";
 import {
   check,
   codexSource,
-  INSTALL_HINT,
+  installHint,
   isPlainCopy,
   launch,
   MARKETPLACE,
@@ -26,6 +30,7 @@ import {
   pluginIntact,
   runCli,
   updated,
+  writeAtomic,
 } from "./common.mjs";
 
 const REQUEST_TIMEOUT = 60_000;
@@ -126,23 +131,65 @@ function installedVersions(dir) {
 
 const marketplaceSources = (config) => (config.marketplaces?.[MARKETPLACE] ? [codexSource(config.marketplaces[MARKETPLACE])] : []);
 
-async function pluginState(server, dir, skills) {
+// A project's .codex layers, which Codex reads out even while the project is
+// not trusted yet, so a marketplace one names is seen before it loads.
+const projectLayers = async (server, project) =>
+  project ? (await server.request("config/read", { cwd: project.dir, includeLayers: true })).layers.filter((l) => l.name.type === "project") : [];
+const allSources = (config, layers) => [config, ...layers.map((l) => l.config)].flatMap(marketplaceSources);
+
+const listedPlugin = async (server, cwd) => {
+  const { marketplaces = [] } = await server.request("plugin/list", cwd ? { cwds: [cwd] } : {});
+  return marketplaces.flatMap((m) => m.plugins ?? []).find((p) => p.id === PLUGIN_ID);
+};
+
+// `sources` adds the project's marketplaces to the home's `homeSources`.
+// `enabled` is as a session sees it: from the project when there is one.
+// `homeEnabled` is the home's own setting, and `layer` the project's
+// .codex/config.toml as Codex reads it, with `disabledReason` set while the
+// project is not trusted.
+async function pluginState(server, dir, skills, project) {
   const { config } = await server.request("config/read", {});
-  const { marketplaces = [] } = await server.request("plugin/list", {});
-  const plugin = marketplaces.flatMap((m) => m.plugins ?? []).find((p) => p.id === PLUGIN_ID);
+  const plugin = await listedPlugin(server);
   const versions = installedVersions(dir);
-  return {
-    sources: marketplaceSources(config),
+  const layers = await projectLayers(server, project);
+  const state = {
+    homeSources: marketplaceSources(config),
+    sources: allSources(config, layers),
     installed: plugin?.installed === true,
     enabled: plugin?.enabled === true,
+    homeEnabled: plugin?.enabled === true,
     versions,
     intact: versions.length === 1 && pluginIntact(join(cacheDir(dir), versions[0]), ".codex-plugin/plugin.json", skills),
   };
+  if (project) {
+    const folder = join(project.dir, ".codex");
+    state.layer = layers.find((l) => l.name.dotCodexFolder === folder);
+    // The layer says so when it exists; a trust the home gives a parent
+    // directory, such as the repository's root, counts too.
+    state.trusted = state.layer ? !state.layer.disabledReason : config.projects?.[project.dir]?.trust_level === "trusted";
+    state.enabled = (await listedPlugin(server, project.dir))?.enabled === true;
+  }
+  return state;
 }
 
-async function pluginHooks(server) {
-  const { data } = await server.request("hooks/list", {});
+async function pluginHooks(server, project) {
+  const { data } = await server.request("hooks/list", project ? { cwds: [project.dir] } : {});
   return data.flatMap((entry) => entry.hooks).filter((hook) => hook.pluginId === PLUGIN_ID);
+}
+
+// Codex writes only the home's config, so the installer appends the plugin's
+// table to a project's config.toml. A file that already names the plugin or
+// has a `plugins` value, which an inline table cannot be extended from, is the
+// user's to edit. `parsed` is the file as Codex read it.
+const TABLE = `[plugins."${PLUGIN_ID}"]`;
+export function enableInProjectConfig(path, parsed) {
+  const text = existsSync(path) ? readFileSync(path, "utf8") : "";
+  if (text.includes(PLUGIN_ID) || parsed?.plugins !== undefined) {
+    throw new Error(`${path} already has a plugins entry; set \`enabled = true\` under ${TABLE} there`);
+  }
+  const gap = !text || text.endsWith("\n\n") ? "" : text.endsWith("\n") ? "\n" : "\n\n";
+  mkdirSync(join(path, ".."), { recursive: true });
+  writeAtomic(path, `${text}${gap}${TABLE}\nenabled = true\n`);
 }
 
 // A file's text, read once without following a symlink, or null when it is a
@@ -182,28 +229,31 @@ function isPinned(hook, pin) {
 // Why `codex plugin add` runs: a first install, an update, a cache with
 // missing files, or a disabled plugin, since Codex has no enable command.
 // Null when the home is already at `version`.
-function codexStep(state, version) {
+// A project install enables it in the project instead.
+function codexStep(state, version, project) {
   if (!state.installed) return "install";
   if (state.versions.length && state.versions.join() !== version) return "update";
   if (!state.intact) return "repair";
-  if (!state.enabled) return "enable";
+  if (!state.enabled && !project) return "enable";
   return null;
 }
 
-export async function installCodex(home, { source, trusted, version, skills, codexHook }) {
+export async function installCodex(home, { source, trusted, version, skills, codexHook, project }) {
   const steps = [];
   const plugin = (...args) => runCli(home.bin, ["plugin", ...args], { CODEX_HOME: home.dir });
-  const state = () => withServer(home, (server) => pluginState(server, home.dir, skills));
+  const state = () => withServer(home, (server) => pluginState(server, home.dir, skills, project));
   mkdirSync(home.dir, { recursive: true });
   let before = await state();
-  if (!before.sources.length) {
+  // A project's marketplace of another source stops it before the home gains one.
+  if (before.sources.length && !marketplaceCheck(before.sources, trusted).ok) return steps;
+  if (!before.homeSources.length) {
     plugin("marketplace", "add", source.arg);
     steps.push(`added the ${MARKETPLACE} marketplace from ${source.arg}`);
     before = await state();
   }
   // Nothing installs from a marketplace of another source; doctor names it.
   if (!marketplaceCheck(before.sources, trusted).ok) return steps;
-  const step = codexStep(before, version);
+  const step = codexStep(before, version, project);
   if (step) {
     // A local marketplace is read in place; a Git one is a snapshot to refresh.
     if (step !== "enable" && !source.local) plugin("marketplace", "upgrade", MARKETPLACE);
@@ -217,8 +267,32 @@ export async function installCodex(home, { source, trusted, version, skills, cod
         enable: "enabled it",
       }[step],
     );
+    // `codex plugin add` enables the plugin in the home; a project install
+    // puts back the home's own setting.
+    if (project && !before.homeEnabled) {
+      await withServer(home, (server) => writeHome(server, "plugins", { [PLUGIN_ID]: { enabled: false } }));
+      if (step === "install") steps.push("left it disabled outside the projects that enable it");
+    }
   }
-  steps.push(...(await withServer(home, (server) => trustHooks(server, trusted, codexHook))));
+  if (project) steps.push(...(await enableInProject(home, project, before)));
+  steps.push(...(await withServer(home, (server) => trustHooks(server, trusted, codexHook, project))));
+  return steps;
+}
+
+const writeHome = (server, keyPath, value) => server.request("config/value/write", { keyPath, mergeStrategy: "upsert", value });
+
+// Trusts the project in the home, then enables the plugin in its config.toml.
+async function enableInProject(home, project, state) {
+  const steps = [];
+  if (!state.trusted) {
+    await withServer(home, (server) => writeHome(server, "projects", { [project.dir]: { trust_level: "trusted" } }));
+    steps.push(`trusted ${project.dir} in ${join(home.dir, "config.toml")}, so Codex reads its .codex/config.toml`);
+  }
+  if (state.layer?.config?.plugins?.[PLUGIN_ID]?.enabled !== true) {
+    const path = join(project.dir, ".codex/config.toml");
+    enableInProjectConfig(path, state.layer?.config);
+    steps.push(`enabled it in ${path}`);
+  }
   return steps;
 }
 
@@ -229,11 +303,11 @@ export async function installCodex(home, { source, trusted, version, skills, cod
 // a hooks file that changed since the check, and then the trust is taken
 // back. `upsert`: `replace` would drop the user's other trusted hooks. An
 // entry from any other hooks file stays untrusted, and doctor names it.
-async function trustHooks(server, trusted, pin) {
+async function trustHooks(server, trusted, pin, project) {
   const { config, layers } = await server.request("config/read", { includeLayers: true });
-  if (!marketplaceCheck(marketplaceSources(config), trusted).ok) return [];
+  if (!marketplaceCheck(allSources(config, await projectLayers(server, project)), trusted).ok) return [];
   const user = layers.find((layer) => layer.name.type === "user");
-  const pending = (await pluginHooks(server)).filter(
+  const pending = (await pluginHooks(server, project)).filter(
     (h) => (h.trustStatus === "untrusted" || h.trustStatus === "modified") && isPinned(h, pin),
   );
   if (!pending.length) return [];
@@ -243,8 +317,8 @@ async function trustHooks(server, trusted, pin) {
     value: Object.fromEntries(pending.map((h) => [h.key, { trusted_hash: h.currentHash }])),
     expectedVersion: user.version,
   });
-  const listed = new Map((await pluginHooks(server)).map((h) => [h.key, h]));
-  const now = (h) => listed.get(h.key) ?? {};
+  const after = new Map((await pluginHooks(server, project)).map((h) => [h.key, h]));
+  const now = (h) => after.get(h.key) ?? {};
   const same = (h) => now(h).command === h.command && now(h).currentHash === h.currentHash;
   const failed = pending.filter((h) => now(h).trustStatus !== "trusted" || !same(h));
   if (failed.length) {
@@ -255,16 +329,32 @@ async function trustHooks(server, trusted, pin) {
   return pending.map((h) => `trusted hook ${h.key} (was ${h.trustStatus})`);
 }
 
-export async function doctorCodex(home, { version, skills, trusted, codexHook }) {
+// Why a project's sessions would not load the plugin, or null when they do.
+function projectProblem(state, project) {
+  const path = join(project.dir, ".codex/config.toml");
+  if (state.layer?.config?.plugins?.[PLUGIN_ID]?.enabled !== true) return `not enabled in ${path}`;
+  if (!state.trusted) return `${project.dir} is not a trusted project, so Codex ignores ${path}`;
+  if (!state.enabled) return `${path} enables it, but a closer .codex/config.toml or a managed layer turns it off`;
+  return null;
+}
+
+export async function doctorCodex(home, { version, skills, trusted, codexHook, project }) {
+  const hint = installHint(project);
   return withServer(home, async (server) => {
-    const state = await pluginState(server, home.dir, skills);
-    const hooks = await pluginHooks(server);
-    const listed = (await server.request("skills/list", { cwds: [neutralCwd()] })).data.flatMap((entry) => entry.skills);
+    const state = await pluginState(server, home.dir, skills, project);
+    const hooks = await pluginHooks(server, project);
+    const listed = (await server.request("skills/list", { cwds: [project?.dir ?? neutralCwd()] })).data.flatMap((entry) => entry.skills);
     const plain = listed.filter((skill) => isPlainCopy(skill.name, skill.path, skills)).map((skill) => skill.path);
     const installed = state.versions.join(", ");
     const good = (h) => h.trustStatus === "trusted" && isPinned(h, codexHook);
+    const problem = project && projectProblem(state, project);
     return [
-      marketplaceCheck(state.sources, trusted, `remove it with \`CODEX_HOME=${home.dir} codex plugin marketplace remove ${MARKETPLACE}\``),
+      marketplaceCheck(
+        state.sources,
+        trusted,
+        `remove it with \`CODEX_HOME=${home.dir} codex plugin marketplace remove ${MARKETPLACE}\``,
+        hint,
+      ),
       check(
         "installed",
         state.installed && installed === version && state.intact,
@@ -275,16 +365,18 @@ export async function doctorCodex(home, { version, skills, trusted, codexHook })
             : state.intact
               ? installed
               : `its files in ${join(cacheDir(home.dir), installed)} are missing`,
-        INSTALL_HINT,
+        hint,
       ),
-      check("enabled", state.enabled, state.enabled ? "yes" : "no", INSTALL_HINT),
+      project
+        ? check("enabled in the project", !problem, problem ?? `yes, in ${join(project.dir, ".codex/config.toml")}`, hint)
+        : check("enabled", state.enabled, state.enabled ? "yes" : "no", hint),
       check(
         "session-start hook trusted",
         hooks.length > 0 && hooks.every(good),
         hooks.length
           ? hooks.map((h) => `${h.key} ${h.trustStatus}${isPinned(h, codexHook) ? "" : `, not from the ${codexHook.path} this release pins`}`).join("; ")
           : "no t3-pstack hook listed",
-        INSTALL_HINT,
+        hint,
       ),
       check(
         "no plain copies of plugin skills",
