@@ -32,7 +32,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs";
-import { basename, dirname, join, relative, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 
 export const MANIFEST_NAME = ".t3-agystack-manifest.json";
@@ -58,19 +58,33 @@ const shortHash = (bytes) => sha256Hex(bytes).slice(0, 16);
 
 // Realpath the deepest existing ancestor of `path` and keep the remainder, so
 // path comparisons across destinations that do not exist yet (and across
-// macOS spellings of the same filesystem) stay consistent. A symlink at the
-// path itself is never dereferenced: on a rerun that leaf is one of this
-// projection's resource links, and following it would resolve to the source.
+// macOS spellings of the same filesystem) stay consistent. Tolerance rules:
+// a missing segment is skipped (the climb continues); a symlink at the path
+// itself is never dereferenced, because on a rerun that leaf is one of this
+// projection's resource links and following it would resolve into the source;
+// a symlinked ancestor is resolved itself, which keeps link targets resolvable
+// when the destination is reached through a symlinked gemini home.
 export function canonicalPath(path) {
-  path = resolve(path);
-  const origin = path;
-  for (let dir = path; ; dir = dirname(dir)) {
+  const origin = resolve(path);
+  for (let dir = origin; ; dir = dirname(dir)) {
+    if (dir === origin) {
+      const self = lstatSync(dir, { throwIfNoEntry: false });
+      if (self?.isSymbolicLink()) continue;
+    }
     const st = lstatSync(dir, { throwIfNoEntry: false });
-    if (st && st.isSymbolicLink()) break;
-    if (st) return realpathSync(dir) + origin.slice(dir.length);
-    if (dir === dirname(dir)) return origin;
+    if (!st) {
+      if (dir === dirname(dir)) return origin;
+      continue;
+    }
+    let base;
+    try {
+      base = realpathSync(dir);
+    } catch {
+      if (dir === dirname(dir)) return origin;
+      continue;
+    }
+    return dir === origin ? base : base + origin.slice(dir.length);
   }
-  return realpathSync(dirname(origin)) + "/" + basename(origin);
 }
 
 function writeAtomic(path, bytes) {
@@ -92,11 +106,12 @@ function linkAtomic(target, path) {
 // source bytes it was built from.
 export function adapterNote(anchor) {
   return [
-    "> **t3-agystack adapter note.** Applies only inside T3. Check now, in order:",
+    "> **t3-agystack adapter note.** Applies only inside T3. Check these, in order; either passing activates this note:",
     "1. a `delegate_task` MCP tool is actually callable in this session, or",
-    "2. the environment sets `T3_ACP_MCP_NODE` (the ACP transport fallback).",
+    "2. `T3_ACP_MCP_NODE` is set **and** names an existing, runnable file (the ACP transport fallback). Bare presence of the variable with no runnable entrypoint does not activate anything: a standalone Antigravity spawned from a T3 terminal inherits the variable without the transport.",
     "Neither check passes: ignore this note. Follow only the original instructions below, unchanged; this is the standalone boundary.",
-    "Either check passes: this note and the sibling `t3-agystack` skill take precedence over every native orchestration instruction below (`invoke_subagent`, `invoke_task`, `manage_subagents`, watchdog timers, native tier config). Never use native subagents or native descendants as an alternative. Run this skill's playbook yourself as the one explicit coordinator. Create child work only through `delegate_task` or the ACP fallback, and open every child brief with the structured delegate envelope from `t3-agystack` (explicit role and task ownership, never only an adapter filename). Cloud Run swarms stay external batch work: only a child explicitly briefed as `cloud-controller` may create and control one run.",
+    "Either check passes: this note and the sibling `t3-agystack` skill take precedence over every native orchestration instruction below (`invoke_subagent`, `invoke_task`, `manage_subagents`, watchdog timers, native tier config). Never use native subagents or native descendants as an alternative.",
+    "Your role decides what this grants. Inside a delegate envelope (`role:` / `ownership:`), you are a leaf: execute the brief directly and spawn nothing. Only the one explicit coordinator session runs the playbook itself and creates child work, and only through `delegate_task` or the ACP fallback, opening every child brief with the structured delegate envelope from `t3-agystack` (explicit role and task ownership, never only an adapter filename). Cloud Run swarms stay external batch work: only a child explicitly briefed as `cloud-controller` may create and control one run.",
     "",
     `<!-- t3-agystack generated SKILL.md (t3-pstack tools/antigravity.mjs). Do not edit by hand: any change is drift and the next install aborts. native anchor ${anchor} -->`,
     "",
@@ -213,8 +228,35 @@ function listResourceFiles(dir) {
 }
 
 // Read the ownership manifest at the projection root. None found: `{ owned: new Map() }`
-// (a fresh destination). Present but unreadable or of another schema: refuse,
-// because only an unreadable manifest can guard ownership safely.
+// (a fresh destination). Present but unreadable, of another schema, or carrying
+// an entry the projection cannot have written: refuse, because only a manifest
+// the projection itself could have produced guards ownership safely. The shape
+// check pins every path inside the destination so the retirement and drift
+// logic can never act outside the projection, whatever the manifest claims.
+export const ENTRY_PATH = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}(?:\/[A-Za-z0-9][A-Za-z0-9._-]{0,63})*$/;
+const MANIFEST_KINDS = new Set(["adapter-skill", "adapter-resource", "generated-skill", "resource-link"]);
+const HASH_SHAPE = /^[0-9a-f]{64}$/;
+const ANCHOR_SHAPE = /^(?:[0-9a-f]{16})?$/;
+
+function ownedEntryProblem(entry) {
+  if (typeof entry !== "object" || entry === null) return "entry is not an object";
+  if (typeof entry.path !== "string" || !ENTRY_PATH.test(entry.path) || entry.path.length > 256)
+    return `path ${JSON.stringify(entry.path ?? null)} is not a projection-relative path`;
+  if (!MANIFEST_KINDS.has(entry.kind)) return `kind ${JSON.stringify(entry.kind ?? null)} is not one the projection writes`;
+  if (typeof entry.hash !== "string" && !(entry.kind === "resource-link" && entry.hash === undefined))
+    return `hash of ${entry.path} is not a sha-256 hex digest`;
+  if (entry.hash !== undefined && !HASH_SHAPE.test(entry.hash)) return `hash of ${entry.path} is not a sha-256 hex digest`;
+  if (entry.anchor !== undefined && (typeof entry.anchor !== "string" || !ANCHOR_SHAPE.test(entry.anchor)))
+    return `anchor of ${entry.path} is not a 16-hex-digit short hash`;
+  if (entry.kind === "resource-link") {
+    if (typeof entry.target !== "string" || !entry.target || entry.target !== entry.target.trim() || entry.target.startsWith("/") || entry.target.includes("\\") || entry.target.includes("//") || entry.target.length > 400)
+      return `target of ${entry.path} is not a relative link target`;
+  } else if (entry.target !== undefined) {
+    return `entry ${entry.path} of kind ${entry.kind} must not carry a target`;
+  }
+  return null;
+}
+
 export function readOwnedManifest(destSkillsDir) {
   let text;
   try {
@@ -233,7 +275,15 @@ export function readOwnedManifest(destSkillsDir) {
     throw new ProjectionBlocked(`${MANIFEST_NAME} has schema ${JSON.stringify(parsed?.schema)}; expected ${MANIFEST_SCHEMA}. Update t3-pstack or remove the manifest by hand`, [{ path: MANIFEST_NAME, code: "manifest-invalid", detail: "wrong schema" }]);
   }
   const owned = new Map();
-  for (const entry of parsed.entries) owned.set(entry.path, entry);
+  for (const entry of parsed.entries) {
+    const problem = ownedEntryProblem(entry);
+    if (problem)
+      throw new ProjectionBlocked(
+        `${MANIFEST_NAME} carries an entry the projection cannot have written (${problem}); fix or remove the manifest by hand before installing`,
+        [{ path: MANIFEST_NAME, code: "manifest-invalid", detail: problem }],
+      );
+    owned.set(entry.path, entry);
+  }
   return { manifest: parsed, owned };
 }
 
@@ -255,9 +305,10 @@ export function checkProjection({ build }) {
     const st = lstatSync(at, { throwIfNoEntry: false });
     if (!st) continue; // already gone; retiring is a no-op
     if (mine.kind === "resource-link") {
-      if (!st.isSymbolicLink()) problems.push({ path, code: "drift", detail: "an owned link path now holds something else; restore or remove it by hand" });
+      if (!st.isSymbolicLink()) problems.push({ path, code: "drift", detail: "an owned link path now holds something else; remove it by hand so the install can rewrite it" });
     } else if (!st.isSymbolicLink()) {
-      if (sha256Hex(readFileSync(at)) !== mine.hash) problems.push({ path, code: "drift", detail: "changed since this projection wrote it; restore or remove it by hand" });
+      if (st.isDirectory()) problems.push({ path, code: "drift", detail: "an owned path now holds a directory; move it out by hand" });
+      else if (sha256Hex(readFileSync(at)) !== mine.hash) problems.push({ path, code: "drift", detail: "a retired path this projection wrote changed since then; remove it by hand" });
     } else {
       problems.push({ path, code: "drift", detail: "an owned generated file path now holds a symlink; remove it by hand" });
     }
@@ -271,7 +322,7 @@ export function checkProjection({ build }) {
     if (!st) continue;
     const mine = owned.get(path);
     if (!mine) {
-      problems.push({ path, code: "collision", detail: "a file or directory the projection did not write already holds this path; the projection never adopts or overwrites user files" });
+      problems.push({ path, code: "collision", detail: "a file or directory the projection did not record already holds this path: a user file, or debris from a first install that crashed mid-write. Move it out by hand; the projection never adopts or overwrites user files" });
       continue;
     }
     if (kind === "resource-link") {
@@ -280,13 +331,16 @@ export function checkProjection({ build }) {
       continue;
     }
     if (st.isSymbolicLink()) problems.push({ path, code: "drift", detail: "the projection owns a generated file at this path but the destination holds a symlink; remove it by hand" });
-    else if (sha256Hex(readFileSync(at)) !== mine.hash) problems.push({ path, code: "drift", detail: "the manifest says this projection wrote this file, but its bytes changed; restore the committed projection by hand" });
+    else if (!st.isFile()) problems.push({ path, code: "drift", detail: "the projection owns this path but the destination holds a directory; move it out by hand" });
+    else if (sha256Hex(readFileSync(at)) !== mine.hash) problems.push({ path, code: "drift", detail: "a file this projection wrote changed since then; remove it by hand and the next install rewrites it" });
   }
 
   return problems;
 }
 
-export function applyProjection({ build }) {
+// Apply a validated plan. Called only through `project()`, which runs
+// `checkProjection` first and throws ProjectionBlocked before any write.
+function applyProjection({ build }) {
   const { destSkillsDir, entries } = build;
   const { owned } = readOwnedManifest(destSkillsDir);
   mkdirSync(destSkillsDir, { recursive: true });
@@ -295,6 +349,7 @@ export function applyProjection({ build }) {
 
   for (const entry of entries) {
     const at = join(destSkillsDir, entry.path);
+    const st2 = lstatSync(at, { throwIfNoEntry: false });
     if (entry.kind === "resource-link") {
       const current = (() => {
         const st = lstatSync(at, { throwIfNoEntry: false });
@@ -310,7 +365,7 @@ export function applyProjection({ build }) {
       applied.push(entry);
       continue;
     }
-    if (existsSync(at) && sha256Hex(readFileSync(at)) === entry.hash) {
+    if (st2?.isFile() && sha256Hex(readFileSync(at)) === entry.hash) {
       skipped.push(entry);
       continue;
     }
@@ -337,7 +392,7 @@ export function applyProjection({ build }) {
   const manifest = {
     schema: MANIFEST_SCHEMA,
     source: build.sourceRoot,
-    entries: entries.map(({ kind, path, hash, anchor, target }) => (target ? { kind, path, hash, target } : anchor ? { kind, path, hash, anchor } : { kind, path, hash })),
+    entries: entries.map(({ kind, path, hash, anchor, target }) => (target ? { kind, path, target } : anchor ? { kind, path, hash, anchor } : { kind, path, hash })),
   };
   const text = `${JSON.stringify(manifest, null, 2)}\n`;
   const manifestPath = join(destSkillsDir, MANIFEST_NAME);
@@ -369,6 +424,9 @@ export function doctor({ sourceRoot, destSkillsDir, packageRoot }) {
   }
   if (!destSkillsDir || !existsSync(destSkillsDir)) {
     report.status = "absent";
+    // Doctor answers "is this integration installed and coherent?". A missing
+    // projection is the negative answer, so it is not ok even on a fresh home.
+    report.ok = false;
     return report;
   }
 
@@ -406,11 +464,13 @@ export function doctor({ sourceRoot, destSkillsDir, packageRoot }) {
       if (!st) report.brokenLinks.push({ path, detail: "link missing" });
       else if (!st.isSymbolicLink()) report.brokenLinks.push({ path, detail: "path holds a real file, not the owned link" });
       else if (!existsSync(at)) report.brokenLinks.push({ path, detail: "dangling link (source moved or file removed)" });
+      else if (typeof mine.target === "string" && readlinkSync(at) !== mine.target) report.brokenLinks.push({ path, detail: "owned link retargeted (reinstall to restore the link)" });
       continue;
     }
     if (!st) report.drift.push(path);
-    else if (!st.isSymbolicLink() && sha256Hex(readFileSync(at)) !== mine.hash) report.drift.push(path);
+    else if (st.isDirectory()) report.drift.push(path);
     else if (st.isSymbolicLink()) report.drift.push(path);
+    else if (sha256Hex(readFileSync(at)) !== mine.hash) report.drift.push(path);
   }
   const bundledScripts = join(packageRoot ?? "", "plugins/pstack/skills", ADAPTER_SKILL_NAME, "scripts");
   const projectedScripts = join(destSkillsDir, ADAPTER_SCRIPTS_DIR);

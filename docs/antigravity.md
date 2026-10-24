@@ -18,7 +18,7 @@ Both verbs accept:
 | `--agystack-source DIR` | agystack plugin directory, default `<gemini-home>/plugins/agystack` |
 | `--json` | machine-readable report on stdout |
 
-Exit codes are 0 for success, 1 for a blocked install or a degraded doctor, 2 for a usage error.
+Exit codes are 0 for success, 1 for a blocked install, a degraded doctor, or a projection that is absent, 2 for a usage error. With `--json` every outcome, usage errors included, is a parseable report on stdout. Install it once installed t3-pstack puts the `t3-antigravity` bin on PATH; from a clone, `node tools/antigravity.mjs` works directly.
 
 Inspect without touching anything:
 
@@ -47,7 +47,7 @@ The destination is `<gemini-home>/skills`, and nothing else.
 
 ## The T3 adapter behavior
 
-Every projected `SKILL.md` carries the routing note. It activates only when a `delegate_task` tool is callable in the session or the environment sets `T3_ACP_MCP_NODE`, the ACP fallback; both predicates appear in every conditional entry, in that order. When active, the note takes precedence over native orchestration references in the loaded agystack skill and hands control to the `t3-agystack` skill: explicit coordinator, T3 child lifecycles, the structured delegate envelope, and exactly one `cloud-controller` child for one Cloud Run run. When neither check passes, the note is dead text and native agystack wins, which is the standalone boundary.
+Every projected `SKILL.md` carries the routing note. It activates only when a `delegate_task` tool is callable in the session, or the environment sets `T3_ACP_MCP_NODE` **and** that variable names an existing, runnable file; both predicates appear in every conditional entry, in that order. When active, the note takes precedence over native orchestration references in the loaded agystack skill and hands control to the `t3-agystack` skill: the one explicit coordinator session, T3 child lifecycles, the structured delegate envelope, and exactly one `cloud-controller` child for one Cloud Run run. A delegate reads the same note but its envelope makes it a leaf: execute the brief, spawn nothing. When neither check passes, the note is dead text and native agystack wins, which is the standalone boundary. A terminal spawned from T3 that wants native behavior reliably can `unset T3_ACP_MCP_NODE`.
 
 The full contract lives in `plugins/pstack/skills/t3-agystack/SKILL.md`. The envelope is an explicit role and ownership block that opens every child brief; a delegate's identity comes from that envelope, never from an adapter filename.
 

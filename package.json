@@ -11,7 +11,8 @@
   "repository": "https://github.com/chhoumann/t3-pstack",
   "license": "MIT",
   "bin": {
-    "t3-pstack": "tools/install.mjs"
+    "t3-pstack": "tools/install.mjs",
+    "t3-antigravity": "tools/antigravity.mjs"
   },
   "devDependencies": {
     "typebox": "1.3.34"

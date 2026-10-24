@@ -9,12 +9,12 @@ agystack playbooks run the same in both worlds. What changes under T3 is who own
 
 ## Activation
 
-This file is active only in a T3 session. Check both, in order:
+This file is active only in a T3 session. Check these, in order; either passing activates this file:
 
 1. A `delegate_task` MCP tool is actually callable in this session (a T3 provider child exists).
-2. The environment sets `T3_ACP_MCP_NODE` (the ACP transport fallback some T3 sessions get).
+2. `T3_ACP_MCP_NODE` is set **and** names an existing, runnable file (the ACP transport fallback). Bare presence of the variable does not activate this file: a standalone Antigravity spawned from a T3 terminal inherits the variable without inheriting the transport, and keeps native behavior. A terminal that wants standalone behavior can `unset T3_ACP_MCP_NODE`.
 
-Neither check passes: ignore this file and the routing note. Native agystack instructions win, including native `invoke_subagent`, watchdog timers, and the native tier config. Standalone Antigravity never reads an adapter. Either check passes: this file and the note take precedence over every native orchestration reference in the loaded agystack skills. Native orchestration is overridden, never offered as an alternative: do not fall back to native `invoke_subagent` descendants because `delegate_task` feels slower. Every conditional entry carries both checks; no session is half-adapter.
+Neither check passes: ignore this file and the routing note. Native agystack instructions win, including native `invoke_subagent`, watchdog timers, and the native tier config. Standalone Antigravity never reads an adapter. Either check passes: this file and the note take precedence over every native orchestration reference in the loaded agystack skills. Native orchestration is overridden, never offered as an alternative: do not fall back to native `invoke_subagent` descendants because `delegate_task` feels slower. Every conditional entry carries both checks; no session is half-adapter, and no terminal is forced into the adapter by an inherited variable alone.
 
 ## Ownership
 

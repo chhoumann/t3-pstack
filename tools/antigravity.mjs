@@ -12,7 +12,7 @@ import { join, resolve } from "node:path";
 import { existsSync } from "node:fs";
 
 import { expandHome } from "./install/common.mjs";
-import { ADAPTER_RESOURCE_PATH, MANIFEST_NAME, buildProjection, doctor, project } from "./install/agystack.mjs";
+import { ADAPTER_RESOURCE_PATH, MANIFEST_NAME, ProjectionBlocked, buildProjection, doctor, project } from "./install/agystack.mjs";
 
 const USAGE = `usage: node tools/antigravity.mjs install|doctor [--gemini-home DIR] [--agystack-source DIR] [--json]
 
@@ -52,7 +52,13 @@ function parseArgs(argv) {
 }
 
 function usageError(message) {
-  process.stderr.write(`antigravity: ${message}\n\n${USAGE}`);
+  // Machine-readable usage errors too: --json promises a parseable report on
+  // stdout, so a parse failure must not become a bare human banner.
+  if (process.argv.slice(2).includes("--json")) {
+    process.stdout.write(`${JSON.stringify({ status: "usage", message }, null, 2)}\n`);
+  } else {
+    process.stderr.write(`antigravity: ${message}\n\n${USAGE}`);
+  }
   process.exit(2);
 }
 
@@ -75,8 +81,24 @@ function main() {
   const options = parseArgs(process.argv.slice(2));
   if (!options.verb) usageError("install or doctor expected");
   const { destSkillsDir, sourceRoot, packageRoot } = homes(options);
-  if (!existsSync(sourceRoot)) usageError(`agystack source "${sourceRoot}" does not exist (pass --agystack-source)`);
   if (options.verb === "install") {
+    const emitBlocked = (payload, human) => {
+      emit(options, payload, human);
+      process.exit(1);
+    };
+    if (!existsSync(sourceRoot)) {
+      // Missing source is an environment problem, not a usage error: report it
+      // in the blocked-report shape and exit 1 so automation can parse it.
+      emitBlocked(
+        {
+          status: "blocked",
+          problems: [{ path: sourceRoot, code: "missing-source", detail: "the agystack source directory does not exist; pass --agystack-source pointing at the installed agystack plugin" }],
+          dest: destSkillsDir,
+          manifest: join(destSkillsDir, MANIFEST_NAME),
+        },
+        `install blocked before any write (nothing was written):\n  missing-source ${sourceRoot}: the agystack source directory does not exist; pass --agystack-source pointing at the installed agystack plugin`,
+      );
+    }
     try {
       const build = buildProjection({ sourceRoot, destSkillsDir, packageRoot });
       const result = project({ build });
@@ -103,22 +125,40 @@ function main() {
       );
       process.exit(0);
     } catch (error) {
-      if (error.name !== "ProjectionBlocked") throw error;
+      if (error instanceof ProjectionBlocked) {
+        emitBlocked(
+          {
+            status: "blocked",
+            problems: error.problems,
+            dest: destSkillsDir,
+            manifest: join(destSkillsDir, MANIFEST_NAME),
+          },
+          [`install blocked before any write (nothing was written):`, ...error.problems.map((p) => `  ${p.code} ${p.path}: ${p.detail}`)].join("\n"),
+        );
+      }
+      // Planning ran to completion but something environmental failed (bad
+      // source names, missing adapter skill). Report, don't stack-trace.
       emit(
         options,
-        {
-          status: "blocked",
-          problems: error.problems,
-          dest: destSkillsDir,
-          manifest: join(destSkillsDir, MANIFEST_NAME),
-        },
-        [`install blocked before any write (nothing was written):`, ...error.problems.map((p) => `  ${p.code} ${p.path}: ${p.detail}`)].join("\n"),
+        { status: "error", dest: destSkillsDir, message: String(error.message ?? error) },
+        `install failed before any write:\n  ${error.stack ?? String(error)}`,
       );
       process.exit(1);
     }
   }
   if (options.verb === "doctor") {
-    const report = doctor({ sourceRoot, destSkillsDir, packageRoot });
+    let report;
+    try {
+      report = doctor({ sourceRoot, destSkillsDir, packageRoot });
+    } catch (error) {
+      // Doctor must degrade to a machine-readable error, not a stack trace.
+      emit(
+        options,
+        { status: "error", dest: destSkillsDir, message: String(error.message ?? error) },
+        `doctor failed:\n  ${error.stack ?? String(error)}`,
+      );
+      process.exit(1);
+    }
     const lines = [
       `agystack projection doctor "${sourceRoot}" -> "${destSkillsDir}"`,
       `  status: ${report.status}`,
