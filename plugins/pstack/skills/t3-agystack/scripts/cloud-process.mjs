@@ -8,7 +8,7 @@ export function executable(name) {
   for (const dir of (process.env.PATH ?? "").split(delimiter)) {
     if (!dir) continue;
     const path = resolve(dir, name);
-    try { accessSync(path, constants.X_OK); if (statSync(path).isFile()) return path; } catch { /* Try the next PATH entry. */ }
+    try { accessSync(path, constants.X_OK); if (statSync(path).isFile()) return path; } catch {}
   }
   throw new CloudError("PREREQUISITE_MISSING", `Install ${name} and make it available on PATH.`);
 }
@@ -18,7 +18,7 @@ export function enginePath(source, cwd) {
     : process.env.AGYSTACK_DISPATCH_SCRIPT ? [resolve(process.env.AGYSTACK_DISPATCH_SCRIPT)]
       : [join(homedir(), ".gemini/config/plugins/agystack", relative), join(cwd, ".agents/plugins/agystack", relative)];
   for (const path of paths) {
-    try { accessSync(path, constants.R_OK); if (statSync(path).isFile()) return realpathSync(path); } catch { /* Try the next installed source. */ }
+    try { accessSync(path, constants.R_OK); if (statSync(path).isFile()) return realpathSync(path); } catch {}
   }
   throw new CloudError("ENGINE_MISSING", "Install agystack or pass --agystack-source pointing to its plugin directory.");
 }

@@ -6,6 +6,11 @@ disable-model-invocation: true
 
 # Swarm
 
+For an explicitly requested agystack Cloud Run swarm, read
+[t3-agystack](../t3-agystack/SKILL.md) and use its cloud-controller workflow.
+Agystack owns the external container workers. T3 tracks their controller task.
+The local worker flow below still applies to swarms running on this machine.
+
 ## Start
 
 Open a todolist with one entry per phase before launching anything.
