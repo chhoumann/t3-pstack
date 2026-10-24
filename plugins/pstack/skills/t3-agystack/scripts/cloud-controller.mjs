@@ -16,11 +16,18 @@ const token = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$/;
 // positive evidence that an attempt could have reached Cloud Run.
 const LAUNCH_MARKER = /^Launching Cloud Run Job\b/m;
 const RECOVERY_PAGE = 100;
+// Operational ceiling for a single recovery scan. A paginated walk keeps small
+// histories complete; a job with more executions created after this run's intent
+// than RECOVERY_MAX still reports RECOVERY_INCOMPLETE rather than paging forever,
+// because each page re-clones the full filtered list server-side.
 const RECOVERY_MAX = 2000;
 const RECOVERY_BUDGET = 60000;
-// Local clocks can trail the API's creationTimestamp, so widen the server-side
-// lower bound instead of assuming perfect ordering.
-const RECOVERY_SKEW = 10 * 60 * 1000;
+// The filter lower bound crosses clocks: the launch-intent timestamp is taken on
+// this machine, while gcloud compares against the job service's clock. A local
+// clock AHEAD of the service would exclude the very execution this run created,
+// so the skew must absorb local-fastward error (NTP steps, a laptop resuming in
+// the future) plus the whole staging window, not just ordering noise.
+const RECOVERY_SKEW = 60 * 60 * 1000;
 const RECOVERY_CONCURRENCY = 8;
 
 export const dispatchOptions = ["repo", "job-name", "region", "project", "gcs-bucket", "model", "parent-model", "vertex-location", "base-branch", "tasks", "parallelism", "max-retries", "orchestrator-timeout", "vertex"];
@@ -194,7 +201,17 @@ export class CloudController {
         if (!record) {
           // --preflight makes quota, auth, git and bucket failures surface while
           // nothing has been staged or launched, so a retry is always safe.
-          const planned = await this.external(id, "plan", python, ["-u", engine, ...flags(options), ...args, "--preflight", "--dry-run"], { cwd });
+          let planned;
+          try {
+            planned = await this.external(id, "plan", python, ["-u", engine, ...flags(options), ...args, "--preflight", "--dry-run"], { cwd });
+          } catch (error) {
+            // Start failures, timeouts and signals of the plan engine happen
+            // before anything is staged or launched and no record exists yet,
+            // so retrying the same client request ID is inherently safe.
+            if (error.code === "INTERRUPTED") throw error;
+            const diagnostics = this.store.diagnostics(id, "plan", error.stderr ?? "");
+            throw new CloudError("PLAN_FAILED", "The dispatcher could not be run to resolve a pre-launch plan. Nothing was launched; retry with the same client request ID. A redacted copy of the failure output is in the diagnostics file.", { runId: id, diagnostics });
+          }
           if (planned.code !== 0) {
             const diagnostics = this.store.diagnostics(id, "plan", planned.stderr);
             throw new CloudError("PLAN_FAILED", "The dispatcher could not resolve a pre-launch plan. Nothing was launched; fix credentials, quota, repository access or the bucket, then retry with the same client request ID. A redacted copy of the engine output is in the diagnostics file.", { runId: id, diagnostics });
@@ -218,6 +235,18 @@ export class CloudController {
         try {
           result = await this.external(id, "launch", python, ["-u", engine, ...planFlags(record.plan), ...(options["orchestrator-timeout"] ? ["--orchestrator-timeout", options["orchestrator-timeout"]] : []), ...args], { cwd });
         } catch (error) {
+          if (error?.code === "PROCESS_START_FAILED") {
+            // spawn failed before the engine ran a single byte, so nothing could
+            // have reached Cloud Run: a deterministic pre-launch failure. The
+            // request stays retryable instead of being stranded forever.
+            record.state = "prepared";
+            record.execution = null;
+            const diagnostics = this.store.diagnostics(id, "launch", error.stderr ?? String(error));
+            record.lastFailure = { code: "PRELAUNCH_FAILED", at: now(), retryable: true, evidence: "process-start-failure", diagnostics };
+            this.save(record);
+            if (error.code === "INTERRUPTED") throw error;
+            throw new CloudError("PRELAUNCH_FAILED", "The engine process itself could not be started. Nothing was launched; retry with the same client request ID. A redacted copy of the failure output is in the diagnostics file.", { runId: id, diagnostics, retryable: true });
+          }
           // The engine was killed or exceeded a bound: stdout cannot prove whether
           // gcloud was invoked, so the record stays ambiguous. Never relaunch it.
           record.state = "unknown";

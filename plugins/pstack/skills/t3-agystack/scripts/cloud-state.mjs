@@ -1,7 +1,7 @@
 // POSIX-only. Run state relies on POSIX file modes (0600), directory fsync,
 // and loopback listener locks. There is no win32 fallback by design.
-import { createHash, randomUUID } from "node:crypto";
-import { chmodSync, closeSync, constants, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, realpathSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { chmodSync, closeSync, constants, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, realpathSync, renameSync, unlinkSync, writeFileSync, writeSync } from "node:fs";
 import { createServer } from "node:net";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -26,12 +26,14 @@ function knownSecrets() {
     .sort((a, b) => b.length - a.length);
 }
 // Provider output can quote credential-bearing commands. Strip values we know
-// came from this process' environment, then the common literal shapes.
+// came from this process' environment, then the common literal shapes. The
+// literal pass must cover both flagged (--token X) and unflagged (password=X,
+// secret: X) spellings, because provider errors quote both.
 export function redact(text) {
   let out = String(text ?? "");
   for (const value of knownSecrets()) out = out.split(value).join("REDACTED");
   return out
-    .replace(/(--?(?:token|api[-_]?key|secret|password)[=\s:]+)(?:"[^"]*"|'[^']*'|\S+)/gi, "$1REDACTED")
+    .replace(/((?<![\w-])-{0,2}(?:token|api[-_]?key|secret|passwd|password)[=\s:]+)(?:"[^"]*"|'[^']*'|\S+)/gi, "$1REDACTED")
     .replace(/\b(?:gh[pousr]_[A-Za-z0-9]{20,}|AIza[0-9A-Za-z_-]{20,})\b/g, "REDACTED")
     .replace(/(Bearer\s+)[A-Za-z0-9._~+/=-]{16,}/gi, "$1REDACTED");
 }
@@ -129,7 +131,23 @@ export class RunStore {
   diagnostics(id, verb, text) {
     const path = join(this.root, `${validateId(id)}.${verb.replace(/[^a-z0-9-]/gi, "-")}.log`);
     const tail = redact(text).replace(/\s+$/, "").split("\n").slice(-50).join("\n");
-    writeFileSync(path, `# ${verb} failure at ${new Date().toISOString()}\n${tail}\n`, { mode: 0o600 });
+    const body = `# ${verb} failure at ${new Date().toISOString()}\n${tail}\n`;
+    // Exclusive temp write then rename: a leftover log or a symlink planted at
+    // the final path is replaced, never followed (same inert state root as save()).
+    const tmp = `${path}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`;
+    const fd = openSync(tmp, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600);
+    try {
+      writeSync(fd, body);
+      fsyncSync(fd);
+    } finally {
+      closeSync(fd);
+    }
+    try {
+      renameSync(tmp, path);
+    } catch (error) {
+      unlinkSync(tmp);
+      throw error;
+    }
     chmodSync(path, 0o600);
     return path;
   }

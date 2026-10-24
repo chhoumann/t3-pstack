@@ -4,7 +4,7 @@ import { spawn } from "node:child_process";
 import { accessSync, constants, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, join, resolve } from "node:path";
-import { CloudError } from "./cloud-state.mjs";
+import { CloudError, redact } from "./cloud-state.mjs";
 
 const OUTPUT_LIMIT = 8 * 1024 * 1024;
 const STDERR_LIMIT = 64 * 1024;
@@ -37,7 +37,16 @@ function progressLine(line) {
 // forwarded: provider output can quote credential-bearing commands.
 export async function runProcess(command, args, { cwd, timeout = 120000, stream = false } = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { cwd, shell: false, detached: true, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, PYTHONUNBUFFERED: "1", CLOUDSDK_CORE_DISABLE_PROMPTS: "1" } });
+    let child;
+    try {
+      child = spawn(command, args, { cwd, shell: false, detached: true, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, PYTHONUNBUFFERED: "1", CLOUDSDK_CORE_DISABLE_PROMPTS: "1" } });
+    } catch (error) {
+      // spawn() can throw synchronously (ENOEXEC for a file with an
+      // unusable interpreter, invalid arguments). Nothing started, which is
+      // the same provable pre-launch shape the error listener reports.
+      reject(new CloudError("PROCESS_START_FAILED", "The external process did not finish. Its output was withheld. Use status or resume to reconcile the run."));
+      return;
+    }
     let stdout = "", stderr = "", line = "", size = 0, failure, escalation;
     function kill(signal) {
       try { process.kill(-child.pid, signal); } catch { /* The process has already exited. */ }
@@ -72,15 +81,17 @@ export async function runProcess(command, args, { cwd, timeout = 120000, stream 
       clearTimeout(timer); clearTimeout(escalation);
       process.removeListener("SIGINT", interrupt); process.removeListener("SIGTERM", interrupt);
       // The bounded tail rides on the error so callers can persist a redacted
-      // copy. It is never part of the error payload shown to the user.
+      // copy. It is redacted here, not only at persistence, so a caller who
+      // logs the error object cannot leak provider stderr. It is never part of
+      // the error payload shown to the user.
       if (failure) {
         const error = new CloudError(failure, "The external process did not finish. Its output was withheld. Use status or resume to reconcile the run.");
-        error.stderr = stderr;
+        error.stderr = redact(stderr);
         reject(error);
       // A signalled child was cut off, so its stdout cannot prove what happened.
       } else if (signal) {
         const error = new CloudError("PROCESS_SIGNALLED", "The external process was terminated by a signal before it finished. Use status or resume to reconcile the run.");
-        error.stderr = stderr;
+        error.stderr = redact(stderr);
         reject(error);
       } else resolve({ code, stdout, stderr });
     });

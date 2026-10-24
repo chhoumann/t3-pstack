@@ -198,6 +198,65 @@ test("pre-launch failures stay prepared and retry with the same client request I
   expect(f.events().filter((event) => event.kind === "launch")).toHaveLength(1);
 });
 
+test("a launch process-start failure stays prepared and retries with the same client request ID", () => {
+  const f = fixture();
+  // The plan invocation poisons the python3 entry after it has exec'd: the plan
+  // run completes normally, then the launch execve fails on the broken shebang
+  // (ENOENT from an executable regular file) and rejects PROCESS_START_FAILED.
+  // The engine never ran a byte in the launch, which is exactly the provable
+  // pre-launch case.
+  writeFileSync(
+    join(f.bin, "python3"),
+    `#!${node}\n\nimport { writeFileSync as poison } from "node:fs";\n`
+    + `poison(${JSON.stringify(join(f.bin, "python3"))}, ${JSON.stringify("#!/nonexistent-interpreter-ENOENT\\n")});\n`
+    + readFileSync(join(repo, "tests/fixtures/cloud/fake-service.mjs"), "utf8"),
+  );
+  const blocked = f.run();
+  error(blocked, "PRELAUNCH_FAILED");
+  const prepared = f.record();
+  expect(prepared.state).toBe("prepared");
+  expect(prepared.execution).toBeNull();
+  expect(prepared.lastFailure).toMatchObject({ code: "PRELAUNCH_FAILED", retryable: true, evidence: "process-start-failure" });
+  // Repair the harness and retry with the same client request ID: one launch.
+  writeFileSync(join(f.bin, "python3"), `#!${node}\n${readFileSync(join(repo, "tests/fixtures/cloud/fake-service.mjs"), "utf8")}`);
+  const run = ok(f.run());
+  expect(run.state).toBe("running");
+  expect(f.events().filter((event) => event.kind === "launch")).toHaveLength(1);
+});
+
+test("a plan process-start failure leaves no record and reports a retryable PLAN_FAILED", () => {
+  const f = fixture();
+  // execve fails on a missing shebang interpreter even though the file is an
+  // executable regular file, so the plan spawn rejects PROCESS_START_FAILED.
+  writeFileSync(join(f.bin, "python3"), "#!/nonexistent-interpreter-ENOENT\n");
+  const blocked = f.run();
+  error(blocked, "PLAN_FAILED");
+  expect(diagnostics(blocked)).toBeTruthy();
+  // Diagnostics live beside run records, so the record itself must be absent.
+  const dir = join(f.root, "state/t3-pstack/agystack/runs");
+  expect(existsSync(dir) && readdirSync(dir).some((name) => name.endsWith(".json"))).toBe(false);
+  // Repair the harness and retry with the same client request ID: one launch.
+  writeFileSync(join(f.bin, "python3"), `#!${node}\n${readFileSync(join(repo, "tests/fixtures/cloud/fake-service.mjs"), "utf8")}`);
+  expect(ok(f.run()).state).toBe("running");
+  expect(f.events().filter((event) => event.kind === "launch")).toHaveLength(1);
+});
+
+test("redaction covers unflagged key=value and key: value shapes", () => {
+  const f = fixture({ gcloudFailure: true, stderrMessage: "password=supersecretvalue1234 secret: mysecretvalue12345 api_key=AKIAlongkey123 --token tokenval1234567" });
+  const run = ok(f.run());
+  const described = f.run(["status", run.id]);
+  error(described, "REMOTE_FAILED");
+  const text = diagnostics(described);
+  expect(text).toContain("password=REDACTED");
+  expect(text).toContain("secret: REDACTED");
+  expect(text).toContain("api_key=REDACTED");
+  // Flagged shapes still read as before, keeping the key spelling for diagnosis.
+  expect(text).toMatch(/--token[=\s]+REDACTED/);
+  for (const secret of ["supersecretvalue1234", "mysecretvalue12345", "AKIAlongkey123", "tokenval1234567"]) {
+    expect(text).not.toContain(secret);
+  }
+});
+
 test("recovery filters server-side and pages instead of refusing large lists", () => {
   const f = fixture({ hideHandle: true, others: 5000, othersRecent: 105 });
   const launch = ok(f.run());
