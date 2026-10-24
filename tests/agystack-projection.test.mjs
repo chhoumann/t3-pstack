@@ -476,6 +476,20 @@ describe("the CLI", () => {
     return spawnSync("node", ["tools/antigravity.mjs", ...args], { cwd: repoRoot, encoding: "utf8" });
   }
 
+  test("a doctor on an existing skills directory without a manifest reports absent and exits 1", () => {
+    const home = workdir();
+    const configHome = join(home, ".gemini", "config");
+    mkdirSync(join(configHome, "skills"), { recursive: true });
+    writeFileSync(join(configHome, "skills", "how.md"), "user file\n");
+    const checked = run("doctor", "--gemini-home", configHome, "--agystack-source", join(home, "nope"), "--json");
+    expect(checked.status).toBe(1);
+    const report = JSON.parse(checked.stdout);
+    expect(report.status).toBe("absent");
+    expect(report.ok).toBe(false);
+    expect(checked.stderr).toBe("");
+    for (const dir of [home]) rmSync(dir, { recursive: true, force: true });
+  });
+
   test("install --json, doctor --json, and an idempotent rerun all exit zero", () => {
     const home = workdir();
     const configHome = join(home, ".gemini", "config");

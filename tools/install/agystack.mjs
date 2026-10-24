@@ -454,7 +454,11 @@ export function doctor({ sourceRoot, destSkillsDir, packageRoot }) {
   };
   walk(destSkillsDir, "");
 
-  if (!owned.size && !existsSync(join(destSkillsDir, MANIFEST_NAME))) return { ...report, status: "absent", userOwnedPaths: onDisk };
+  if (!owned.size && !existsSync(join(destSkillsDir, MANIFEST_NAME))) {
+    // Same absent semantics as a missing destination: the projection is not
+    // installed, so doctor answers no, whatever else this skills dir holds.
+    return { ...report, status: "absent", ok: false, userOwnedPaths: onDisk };
+  }
 
   report.manifest = { present: existsSync(join(destSkillsDir, MANIFEST_NAME)), entries: [...owned.keys()].length };
   for (const [path, mine] of owned) {
