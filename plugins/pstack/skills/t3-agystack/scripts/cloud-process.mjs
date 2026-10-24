@@ -1,8 +1,13 @@
+// POSIX-only. Process-group signalling, detached process groups and file modes
+// have no win32 equivalent; the bridge refuses to pretend otherwise.
 import { spawn } from "node:child_process";
 import { accessSync, constants, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, join, resolve } from "node:path";
 import { CloudError } from "./cloud-state.mjs";
+
+const OUTPUT_LIMIT = 8 * 1024 * 1024;
+const STDERR_LIMIT = 64 * 1024;
 
 export function executable(name) {
   for (const dir of (process.env.PATH ?? "").split(delimiter)) {
@@ -28,12 +33,14 @@ function progressLine(line) {
   if (progress) process.stderr.write(`${progress[0]}\n`);
 }
 
+// stderr is captured in a bounded tail for redacted diagnostics. It is never
+// forwarded: provider output can quote credential-bearing commands.
 export async function runProcess(command, args, { cwd, timeout = 120000, stream = false } = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { cwd, shell: false, detached: process.platform !== "win32", stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, PYTHONUNBUFFERED: "1", CLOUDSDK_CORE_DISABLE_PROMPTS: "1" } });
-    let stdout = "", line = "", size = 0, failure, escalation;
+    const child = spawn(command, args, { cwd, shell: false, detached: true, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, PYTHONUNBUFFERED: "1", CLOUDSDK_CORE_DISABLE_PROMPTS: "1" } });
+    let stdout = "", stderr = "", line = "", size = 0, failure, escalation;
     function kill(signal) {
-      try { if (process.platform !== "win32") process.kill(-child.pid, signal); else child.kill(signal); } catch { /* The process has already exited. */ }
+      try { process.kill(-child.pid, signal); } catch { /* The process has already exited. */ }
     }
     function stop(code) {
       failure ??= code;
@@ -54,18 +61,28 @@ export async function runProcess(command, args, { cwd, timeout = 120000, stream 
         if (line.length > 8192) line = "";
       } else {
         size += Buffer.byteLength(chunk);
-        if (size > 8 * 1024 * 1024) stop("PROCESS_OUTPUT_LIMIT");
+        if (size > OUTPUT_LIMIT) stop("PROCESS_OUTPUT_LIMIT");
         else stdout += chunk;
       }
     });
-    // Provider stderr can contain credential-bearing commands. Never forward it.
-    child.stderr.resume();
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (chunk) => { stderr = (stderr + chunk).slice(-STDERR_LIMIT); });
     child.on("error", () => { failure = "PROCESS_START_FAILED"; });
-    child.on("close", (code) => {
+    child.on("close", (code, signal) => {
       clearTimeout(timer); clearTimeout(escalation);
       process.removeListener("SIGINT", interrupt); process.removeListener("SIGTERM", interrupt);
-      if (failure) reject(new CloudError(failure, "The external process did not finish. Its output was withheld. Use status or resume to reconcile the run."));
-      else resolve({ code, stdout });
+      // The bounded tail rides on the error so callers can persist a redacted
+      // copy. It is never part of the error payload shown to the user.
+      if (failure) {
+        const error = new CloudError(failure, "The external process did not finish. Its output was withheld. Use status or resume to reconcile the run.");
+        error.stderr = stderr;
+        reject(error);
+      // A signalled child was cut off, so its stdout cannot prove what happened.
+      } else if (signal) {
+        const error = new CloudError("PROCESS_SIGNALLED", "The external process was terminated by a signal before it finished. Use status or resume to reconcile the run.");
+        error.stderr = stderr;
+        reject(error);
+      } else resolve({ code, stdout, stderr });
     });
   });
 }

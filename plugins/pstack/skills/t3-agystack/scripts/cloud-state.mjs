@@ -1,11 +1,13 @@
+// POSIX-only. Run state relies on POSIX file modes (0600), directory fsync,
+// and loopback listener locks. There is no win32 fallback by design.
 import { createHash, randomUUID } from "node:crypto";
-import { closeSync, constants, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, realpathSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, closeSync, constants, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, realpathSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
 export class CloudError extends Error {
-  constructor(code, message) { super(message); this.code = code; }
+  constructor(code, message, details) { super(message); this.code = code; this.details = details; }
 }
 export const hash = (value) => createHash("sha256").update(value).digest("hex");
 export const terminal = (state) => ["succeeded", "failed", "cancelled"].includes(state);
@@ -14,6 +16,24 @@ export const sessionId = (id) => `t3-${id.slice(4)}`;
 export function validateId(id) {
   if (!/^run-[a-f0-9]{64}$/.test(id ?? "")) throw new CloudError("INVALID_ARGUMENT", "Use a run ID returned by dispatch or list.");
   return id;
+}
+
+const secretName = /(TOKEN|SECRET|PASSWORD|PASSWD|PRIVATE_KEY|ACCESS_KEY|API_KEY|APIKEY|CREDENTIAL)/i;
+function knownSecrets() {
+  return Object.entries(process.env)
+    .filter(([name, value]) => value && value.length >= 8 && secretName.test(name))
+    .map(([, value]) => value)
+    .sort((a, b) => b.length - a.length);
+}
+// Provider output can quote credential-bearing commands. Strip values we know
+// came from this process' environment, then the common literal shapes.
+export function redact(text) {
+  let out = String(text ?? "");
+  for (const value of knownSecrets()) out = out.split(value).join("REDACTED");
+  return out
+    .replace(/(--?(?:token|api[-_]?key|secret|password)[=\s:]+)(?:"[^"]*"|'[^']*'|\S+)/gi, "$1REDACTED")
+    .replace(/\b(?:gh[pousr]_[A-Za-z0-9]{20,}|AIza[0-9A-Za-z_-]{20,})\b/g, "REDACTED")
+    .replace(/(Bearer\s+)[A-Za-z0-9._~+/=-]{16,}/gi, "$1REDACTED");
 }
 
 function syncDirectory(path) {
@@ -32,6 +52,21 @@ function checkPrivate(path, directory) {
     || (process.getuid && stat.uid !== process.getuid()) || (stat.mode & 0o077)) {
     throw new CloudError("STATE_PERMISSIONS", "Run state must be owned by this user and inaccessible to other users.");
   }
+}
+
+function busy(store, id, scope) {
+  // Another process owns the listener. Report the winning run so the caller can
+  // retry with the same client request ID instead of minting a new one.
+  let record = null;
+  try { record = store.read(id); } catch { /* Unreadable or absent state still does not hand over the lock. */ }
+  return new CloudError("BUSY", `Another local operation owns this run's ${scope} lock. Retry with the same client request ID; that attaches to this run instead of launching a duplicate.`, {
+    runId: id,
+    clientRequestId: record?.requestId ?? null,
+    state: record?.state ?? "unknown",
+    execution: record?.execution ?? null,
+    lock: scope,
+    retryWithSameRequestId: true,
+  });
 }
 
 export class RunStore {
@@ -75,15 +110,34 @@ export class RunStore {
     } finally { if (existsSync(temporary)) unlinkSync(temporary); }
     return record;
   }
+  // One unreadable record must not hide the rest. Permission failures still fail
+  // closed: a record owned by someone else is a security problem, not damage.
   list() {
     return readdirSync(this.root).filter((name) => /^run-[a-f0-9]{64}\.json$/.test(name))
-      .sort().map((name) => this.require(name.slice(0, -5)));
+      .sort().map((name) => {
+        const id = name.slice(0, -5);
+        try { return this.require(id); }
+        catch (error) {
+          if (error instanceof CloudError && ["STATE_CORRUPT", "RUN_MISSING"].includes(error.code)) {
+            return { id, state: "corrupt", code: error.code, message: error.message };
+          }
+          throw error;
+        }
+      });
   }
-  async locked(id, action) {
+  // Keep the last provider lines for diagnosis. Redacted, owner-only, never on stdout.
+  diagnostics(id, verb, text) {
+    const path = join(this.root, `${validateId(id)}.${verb.replace(/[^a-z0-9-]/gi, "-")}.log`);
+    const tail = redact(text).replace(/\s+$/, "").split("\n").slice(-50).join("\n");
+    writeFileSync(path, `# ${verb} failure at ${new Date().toISOString()}\n${tail}\n`, { mode: 0o600 });
+    chmodSync(path, 0o600);
+    return path;
+  }
+  async locked(id, action, scope = "state") {
     validateId(id);
     // A loopback listener is a kernel-owned process-lifetime lock. Port collisions
     // fail closed as BUSY. No stale-file deletion can race a replacement owner.
-    const port = 20000 + (parseInt(hash(`${this.root}/${id}`).slice(0, 8), 16) % 40000);
+    const port = 20000 + (parseInt(hash(`${this.root}/${id}:${scope}`).slice(0, 8), 16) % 40000);
     const server = createServer((socket) => socket.destroy());
     try {
       await new Promise((resolve, reject) => {
@@ -91,7 +145,7 @@ export class RunStore {
         server.listen({ host: "127.0.0.1", port, exclusive: true }, resolve);
       });
     } catch {
-      throw new CloudError("BUSY", "Another local operation owns this run's lock, or its lock port is unavailable. Retry later.");
+      throw busy(this, id, scope);
     }
     try { return await action(); }
     finally { await new Promise((resolve) => server.close(resolve)); }

@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import { spawn, spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -34,7 +34,8 @@ function fixture(initial = {}) {
     run(args = dispatch, extraEnv = {}) {
       const p = spawnSync(node, [cli, ...args, "--json"], { cwd: root, env: { ...env, ...extraEnv }, encoding: "utf8", timeout: 15000 });
       let data; try { data = JSON.parse(p.stdout); } catch { /* Failed commands may have no JSON output. */ }
-      return { ...p, data };
+      let detail; try { detail = JSON.parse(p.stderr); } catch { /* Not every failure is a structured bridge error. */ }
+      return { ...p, data, detail };
     },
     start(args = dispatch) {
       const p = spawn(node, [cli, ...args, "--json"], { cwd: root, env, stdio: ["ignore", "pipe", "pipe"] });
@@ -75,6 +76,15 @@ async function until(predicate) {
 }
 function ok(result) { expect(result.status, result.stderr).toBe(0); return result.data; }
 function error(result, code) { expect(result.status).not.toBe(0); expect(result.stderr).toContain(code); }
+function diagnostics(result, secret = "CLOUD_SENTINEL") {
+  const path = result.detail?.details?.diagnostics;
+  expect(path, result.stderr).toBeTruthy();
+  expect(existsSync(path)).toBe(true);
+  expect(statSync(path).mode & 0o777).toBe(0o600);
+  const text = readFileSync(path, "utf8");
+  expect(text).not.toContain(secret);
+  return text;
+}
 
 test("dispatch uses real engine flags, persists a safe plan and deduplicates a request", () => {
   const f = fixture();
@@ -113,7 +123,16 @@ test("concurrent identical processes launch once and a live lock never expires",
   expect(run.state).toBe("launching");
   expect(run.sessionId).toMatch(/^t3-[a-f0-9]+$/);
   f.ageRecord();
-  error(f.run(), "BUSY");
+  const busy = f.run();
+  error(busy, "BUSY");
+  // The loser gets the winner's handle so it can retry the SAME request ID.
+  expect(busy.detail.details).toMatchObject({
+    runId: run.id,
+    clientRequestId: "request-one",
+    state: "launching",
+    execution: null,
+    retryWithSameRequestId: true,
+  });
   error(f.run(["cancel", run.id]), "BUSY");
   f.release("launching");
   expect(await first.done).toBe(0);
@@ -145,33 +164,76 @@ test("simultaneous first dispatches cannot create duplicate launches", async () 
   expect(f.events().filter((event) => event.kind === "launch")).toHaveLength(1);
 });
 
-test("launch errors and repeated empty scans never authorize another launch", () => {
+test("failures after the launch marker never authorize another launch", () => {
   const f = fixture({ launchFailure: true, emptyList: true });
-  error(f.run(), "LAUNCH_UNCERTAIN");
+  const result = f.run();
+  error(result, "LAUNCH_UNCERTAIN");
+  diagnostics(result);
   const run = f.record();
   expect(run.state).toBe("unknown");
+  expect(run.lastFailure).toMatchObject({ code: "LAUNCH_UNCERTAIN", retryable: false, evidence: "launch-marker-present" });
   for (let i = 0; i < 2; i++) expect(ok(f.run(["resume", run.id])).state).toBe("unknown");
   expect(ok(f.run()).state).toBe("unknown");
   expect(f.events().filter((event) => event.kind === "launch")).toHaveLength(1);
 });
 
-test("recovery finds a later-page handle, rejects ambiguity and incomplete scans", () => {
-  const f = fixture({ hideHandle: true, others: 105 });
+test("pre-launch failures stay prepared and retry with the same client request ID", () => {
+  const f = fixture({ launchPreflightFailure: true, stderrMessage: "Error [Pre-Flight]: quota exceeded for project test-project" });
+  const blocked = f.run();
+  error(blocked, "PRELAUNCH_FAILED");
+  expect(diagnostics(blocked)).toContain("quota exceeded");
+  const prepared = f.record();
+  expect(prepared.state).toBe("prepared");
+  expect(prepared.execution).toBeNull();
+  expect(prepared.lastFailure).toMatchObject({ code: "PRELAUNCH_FAILED", retryable: true, evidence: "launch-marker-absent" });
+  // The same request ID may retry, and a failing retry still launches nothing.
+  error(f.run(), "PRELAUNCH_FAILED");
+  expect(f.events().filter((event) => event.kind === "launch")).toHaveLength(0);
+  f.set({ launchPreflightFailure: false, stderrMessage: undefined });
   const run = ok(f.run());
-  expect(ok(f.run(["resume", run.id])).execution).toBe("swarm-abcde");
+  expect(run.state).toBe("running");
+  expect(run.execution).toBe("swarm-abcde");
+  expect(run.lastFailure).toBeNull();
+  expect(ok(f.run()).id).toBe(run.id);
+  expect(f.events().filter((event) => event.kind === "launch")).toHaveLength(1);
+});
+
+test("recovery filters server-side and pages instead of refusing large lists", () => {
+  const f = fixture({ hideHandle: true, others: 5000, othersRecent: 105 });
+  const launch = ok(f.run());
+  expect(launch.execution).toBeNull();
+  // 5000 executions of the shared job predate this run and are dropped by the
+  // server-side filter; the remaining 106 need a second page to reach the handle.
+  expect(ok(f.run(["resume", launch.id])).execution).toBe("swarm-abcde");
+  const lists = f.events().filter((event) => event.kind === "list");
+  expect(lists.length).toBeGreaterThan(1);
+  for (const list of lists) expect(list.args.some((arg) => arg.startsWith("--filter=creationTimestamp>="))).toBe(true);
+}, 30000);
+
+test("recovery rejects ambiguity and reports an incomplete paginated scan", () => {
   const g = fixture({ hideHandle: true, ambiguous: true });
   const ambiguous = ok(g.run());
   error(g.run(["resume", ambiguous.id]), "AMBIGUOUS_EXECUTION");
   expect(g.record().execution).toBeNull();
-  g.set({ ambiguous: false, pageToken: true });
+  g.set({ ambiguous: false, othersRecent: 2500 });
   error(g.run(["resume", ambiguous.id]), "RECOVERY_INCOMPLETE");
-  g.set({ pageToken: false, others: 1001 });
-  error(g.run(["resume", ambiguous.id]), "RECOVERY_INCOMPLETE");
-}, 15000);
+}, 30000);
 
 test.each(["wrongJob", "wrongSession"])("recovery refuses an execution with %s", (flag) => {
   const f = fixture({ hideHandle: true, [flag]: true }); const run = ok(f.run());
   expect(ok(f.run(["resume", run.id])).execution).toBeNull();
+});
+
+test("recovery identifies executions by session env rather than a job label", () => {
+  const f = fixture({ hideHandle: true, omitJobLabel: true });
+  const run = ok(f.run());
+  expect(ok(f.run(["resume", run.id])).execution).toBe("swarm-abcde");
+});
+
+test("recovery reads the v2 Execution describe shape", () => {
+  const f = fixture({ hideHandle: true, v2: true });
+  const run = ok(f.run());
+  expect(ok(f.run(["resume", run.id])).execution).toBe("swarm-abcde");
 });
 
 test("cancel remains cancelling until the service confirms completion", () => {
@@ -234,25 +296,114 @@ test("interrupting attach stops only observation and does not cancel the job", a
   expect(ok(f.run(["status", run.id])).state).toBe("running");
 });
 
-test("harvest and cancel mutations cannot overwrite each other", async () => {
+test("harvest never blocks cancellation and only locks state mutations", async () => {
   const f = fixture({ holdHarvest: true }); const run = ok(f.run());
   const p = f.start(["harvest", run.id]);
   await until(() => existsSync(join(f.root, "harvesting")));
-  error(f.run(["cancel", run.id]), "BUSY");
-  f.release("harvesting"); expect(await p.done).toBe(0);
+  // The state lock is free during the download, so cancellation proceeds.
   const cancelled = ok(f.run(["cancel", run.id]));
-  expect(cancelled.harvest.status).toBe("downloaded");
   expect(cancelled.state).toBe("cancelling");
+  expect(cancelled.harvest.status).toBe("fetching");
+  // A second download is still serialized, but it never blocks cancellation.
+  error(f.run(["harvest", run.id]), "BUSY");
+  f.release("harvesting"); expect(await p.done).toBe(0);
+  const final = ok(f.run(["status", run.id]));
+  expect(final.harvest.status).toBe("downloaded");
+  expect(final.state).toBe("cancelling");
 });
 
-test("missing engine, executable, and credentials fail before launch without secret output", () => {
-  const f = fixture({ dryFailure: true });
+test("plan failures leave no record and retry with the same client request ID", () => {
+  const f = fixture({ dryPreflightFailure: true, stderrMessage: "Error [Pre-Flight]: quota exceeded for project test-project" });
   const result = f.run(); error(result, "PLAN_FAILED");
   expect(result.stderr).not.toContain("CLOUD_SENTINEL");
+  expect(diagnostics(result)).toContain("quota exceeded");
   expect(f.events().filter((event) => event.kind === "launch")).toHaveLength(0);
+  const stateDir = join(f.root, "state/t3-pstack/agystack/runs");
+  expect(readdirSync(stateDir).filter((name) => /^run-[a-f0-9]{64}\.json$/.test(name))).toHaveLength(0);
+  f.set({ dryPreflightFailure: false, stderrMessage: undefined });
+  expect(ok(f.run()).state).toBe("running");
+  expect(f.events().filter((event) => event.kind === "launch")).toHaveLength(1);
   error(f.run(["dispatch", "--client-request-id", "missing", "--manifest", f.manifest, "--agystack-source", join(f.root, "absent")]), "ENGINE_MISSING");
   rmSync(join(f.bin, "gcloud"));
-  error(f.run(), "PREREQUISITE_MISSING");
+  error(f.run(f.dispatch.map((arg) => arg === "request-one" ? "request-two" : arg)), "PREREQUISITE_MISSING");
+});
+
+test("diagnostics keep only the last 50 redacted stderr lines", () => {
+  const f = fixture({ launchPreflightFailure: true, stderrLines: 120 });
+  const result = f.run();
+  error(result, "PRELAUNCH_FAILED");
+  const lines = readFileSync(result.detail.details.diagnostics, "utf8").trimEnd().split("\n");
+  expect(lines).toHaveLength(51);
+  expect(lines[0]).toStartWith("# launch failure at ");
+  expect(lines[1]).toContain("provider line 70");
+  expect(lines.at(-1)).toContain("provider line 119");
+  expect(lines.join("\n")).not.toContain("CLOUD_SENTINEL");
+});
+
+test("every failing remote verb persists and references redacted diagnostics", () => {
+  const f = fixture({ gcloudFailure: true, stderrMessage: "PERMISSION_DENIED: quota project mismatch" });
+  const run = ok(f.run());
+  const described = f.run(["status", run.id]);
+  error(described, "REMOTE_FAILED");
+  expect(diagnostics(described)).toContain("PERMISSION_DENIED");
+  f.set({ gcloudFailure: false, harvestFailure: true });
+  const harvested = f.run(["harvest", run.id]);
+  error(harvested, "HARVEST_FAILED");
+  expect(diagnostics(harvested)).toContain("PERMISSION_DENIED");
+  f.set({ harvestFailure: false, cancelDenied: true });
+  const cancelled = f.run(["cancel", run.id]);
+  error(cancelled, "CANCEL_UNCONFIRMED");
+  expect(diagnostics(cancelled)).toContain("PERMISSION_DENIED");
+  expect(f.record().state).toBe("cancelling");
+}, 20000);
+
+test("attach failures keep observation separate and reference diagnostics", async () => {
+  const f = fixture({ attachFailure: true, stderrMessage: "UNAUTHENTICATED: credentials expired" });
+  const run = ok(f.run());
+  const p = f.start(["attach", run.id]);
+  await until(() => existsSync(join(f.root, "attached")));
+  f.release("attached");
+  expect(await p.done).toBe(1);
+  const payload = JSON.parse(p.errors.trim().split("\n").at(-1));
+  expect(payload.error).toBe("ATTACH_FAILED");
+  const text = readFileSync(payload.details.diagnostics, "utf8");
+  expect(text).toContain("UNAUTHENTICATED");
+  expect(text).not.toContain("CLOUD_SENTINEL");
+  expect(ok(f.run(["status", run.id])).state).toBe("running");
+});
+
+test("prepared reuse keeps the first controller task ID and says so", () => {
+  const f = fixture({ launchPreflightFailure: true });
+  error(f.run(), "PRELAUNCH_FAILED");
+  expect(f.record().controllerTaskId).toBe("task-provenance");
+  f.set({ launchPreflightFailure: false });
+  const retried = ok(f.run(f.dispatch.map((arg) => arg === "task-provenance" ? "task-other" : arg)));
+  expect(retried.controllerTaskId).toBe("task-provenance");
+  expect(retried.controllerTaskIdNotice).toContain("task-other");
+  expect(f.record().controllerTaskId).toBe("task-provenance");
+  expect(f.events().filter((event) => event.kind === "launch")).toHaveLength(1);
+});
+
+test("list marks one corrupt record instead of failing the listing", () => {
+  const f = fixture(); const run = ok(f.run());
+  const dir = join(f.root, "state/t3-pstack/agystack/runs");
+  const corrupt = `run-${"a".repeat(64)}`;
+  writeFileSync(join(dir, `${corrupt}.json`), "{ this is not json", { mode: 0o600 });
+  const listed = ok(f.run(["list"]));
+  expect(listed.find((item) => item.id === run.id).state).toBe("running");
+  expect(listed.find((item) => item.id === corrupt)).toMatchObject({ state: "corrupt", code: "STATE_CORRUPT" });
+});
+
+test.each([
+  ["https://github.com/example/repo.git", true],
+  ["git@github.com:example/repo.git", true],
+  ["ssh://git@github.com/example/repo.git", true],
+  ["https://user:pass@github.com/example/repo.git", false],
+  ["https://github.com/example/repo.git?token=sentinel", false],
+])("repository URL %s is accepted: %s", (url, accepted) => {
+  const f = fixture({ repoUrl: url });
+  if (accepted) expect(ok(f.run()).plan.repo).toBeTruthy();
+  else error(f.run(), "PLAN_INVALID");
 });
 
 test("run identifiers and unsupported flags cannot escape the state directory", () => {
