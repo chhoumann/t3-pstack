@@ -14,7 +14,7 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
 import {
-  ADAPTER_RESOURCE_PATH,
+  ADAPTER_SCRIPTS_DIR,
   ADAPTER_SKILL_NAME,
   MANIFEST_NAME,
   adapterNote,
@@ -51,7 +51,12 @@ function fixturePackage(root, withResource = true) {
   const base = join(root, "plugins/pstack/skills/t3-agystack");
   mkdirSync(join(base, "scripts"), { recursive: true });
   writeFileSync(join(base, "SKILL.md"), readFileSync(repoAdapterSkill));
-  if (withResource) writeFileSync(join(base, "scripts/cloud-run.mjs"), "// fixture cloud-run bridge: engine resolution, --json\n");
+  if (withResource) {
+    writeFileSync(join(base, "scripts/cloud-run.mjs"), "// fixture bridge entry: dispatch/status/resume/cancel/harvest/list/attach, --json\n");
+    writeFileSync(join(base, "scripts/cloud-controller.mjs"), "// fixture controller module\n");
+    writeFileSync(join(base, "scripts/cloud-process.mjs"), "// fixture process module\n");
+    writeFileSync(join(base, "scripts/cloud-state.mjs"), "// fixture state module\n");
+  }
   return root;
 }
 
@@ -124,7 +129,7 @@ describe("install behavior", () => {
     expect(paths).toContain("how/SKILL.md");
     expect(paths).toContain("how/references/deep.md");
     expect(paths).toContain("t3-agystack/SKILL.md");
-    expect(paths).not.toContain(ADAPTER_RESOURCE_PATH);
+    expect(manifest.entries.some((e) => e.kind === "adapter-resource")).toBe(false);
 
     // Generated SKILL.md equals exactly the native bytes with the note inserted.
     const nativeHow = readFileSync(join(source, "skills/how/SKILL.md"), "utf8");
@@ -156,6 +161,22 @@ describe("install behavior", () => {
     expect(again.removed).toEqual([]);
     expect(snapshot(destSkills)).toEqual(before);
     for (const dir of [home, source, pack]) rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("a symlinked source directory, like the standard plugin install, still links without dangling", () => {
+    const home = workdir();
+    const realSource = fixtureSource(workdir());
+    const alias = join(home, "alias-source");
+    symlinkSync(realSource, alias);
+    const destSkills = join(home, ".gemini", "config", "skills");
+    const pack = fixturePackage(workdir(), false);
+    project({ build: buildProjection({ sourceRoot: alias, destSkillsDir: destSkills, packageRoot: pack }) });
+
+    expect(statSync(join(destSkills, "swarm-fixture/scripts/one.py")).isFile()).toBe(true);
+    expect(readFileSync(join(destSkills, "swarm-fixture/scripts/one.py"), "utf8")).toBe("print('one')\n");
+    expect(realpathSync(join(destSkills, "swarm-fixture/scripts/one.py"))).toBe(realpathSync(join(realSource, "skills/swarm-fixture/scripts/one.py")));
+    expect(doctor({ sourceRoot: alias, destSkillsDir: destSkills, packageRoot: pack }).brokenLinks).toEqual([]);
+    for (const dir of [home, realSource, pack]) rmSync(dir, { recursive: true, force: true });
   });
 
   test("pre-existing user-owned files block the whole install before any write", () => {
@@ -269,22 +290,24 @@ describe("install behavior", () => {
   });
 });
 
-describe("adapter resource from the installed package", () => {
-  test("when the package ships scripts/cloud-run.mjs the projection copies it and keeps the skill byte-for-byte", () => {
+describe("adapter resources from the installed package", () => {
+  test("when the package ships the bridge scripts the projection copies every one and keeps the skill byte-for-byte", () => {
     const home = workdir();
     const source = fixtureSource(workdir());
     const destSkills = join(home, ".gemini", "config", "skills");
     const pack = fixturePackage(workdir(), true);
     project({ build: buildProjection({ sourceRoot: source, destSkillsDir: destSkills, packageRoot: pack }) });
 
-    const resource = join(destSkills, ADAPTER_RESOURCE_PATH);
-    expect(statSync(resource).isFile()).toBe(true);
-    const nativeResource = join(pack, "plugins/pstack/skills", ADAPTER_RESOURCE_PATH);
-    expect(readFileSync(resource, "utf8")).toBe(readFileSync(nativeResource, "utf8"));
-    if (!existsSync(join(destSkills, `${ADAPTER_SKILL_NAME}/SKILL.md`))) throw new Error(`missing adapter SKILL.md; dest has: ${readdirSync(destSkills).join(", ")} / adapter dir: ${(() => { try { return readdirSync(join(destSkills, ADAPTER_SKILL_NAME)).join(", "); } catch { return "<absent>"; } })()}`);
-    expect(sha(join(destSkills, `${ADAPTER_SKILL_NAME}/SKILL.md`))).toBe(sha(join(pack, "plugins/pstack/skills", ADAPTER_SKILL_NAME, "SKILL.md")));
-    const entry = JSON.parse(readFileSync(join(destSkills, MANIFEST_NAME), "utf8")).entries.find((e) => e.path === ADAPTER_RESOURCE_PATH);
-    expect(entry.kind).toBe("adapter-resource");
+    const nativeScripts = join(pack, "plugins/pstack/skills", ADAPTER_SCRIPTS_DIR);
+    const projectedScripts = join(destSkills, ADAPTER_SCRIPTS_DIR);
+    expect(readdirSync(projectedScripts).sort()).toEqual(readdirSync(nativeScripts).sort());
+    for (const name of readdirSync(nativeScripts)) {
+      expect(statSync(join(projectedScripts, name)).isFile()).toBe(true);
+      expect(readFileSync(join(projectedScripts, name), "utf8")).toBe(readFileSync(join(nativeScripts, name), "utf8"));
+    }
+    expect(sha(join(destSkills, `${ADAPTER_SKILL_NAME}/SKILL.md`))).toBe(sha(join(nativeScripts, "..", "SKILL.md")));
+    const entries = JSON.parse(readFileSync(join(destSkills, MANIFEST_NAME), "utf8")).entries.filter((e) => e.kind === "adapter-resource");
+    expect(entries.map((e) => e.path).sort()).toEqual(["t3-agystack/scripts/cloud-controller.mjs", "t3-agystack/scripts/cloud-process.mjs", "t3-agystack/scripts/cloud-run.mjs", "t3-agystack/scripts/cloud-state.mjs"]);
     for (const dir of [home, source, pack]) rmSync(dir, { recursive: true, force: true });
   });
 });

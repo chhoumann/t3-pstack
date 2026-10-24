@@ -1,18 +1,11 @@
 #!/usr/bin/env node
-// The dedicated agystack projection CLI. Titles:
+// The dedicated agystack projection CLI.
 //
-//   install  project the agystack Antigravity plugin into `~/.gemini/config/skills`
+//   install  project the agystack Antigravity plugin into <gemini-home>/skills
 //   doctor   read-only report on the projection and its manifest
 //
-// Shared flags:
-//   --gemini-home DIR     the Gemini config home (default ~/.gemini/config)
-//   --agystack-source DIR the agystack plugin directory to project from
-//                         (default: plugins/agystack inside the gemini home)
-//   --json                machine-readable report on stdout
-//
-// Exit codes: 0 success, 1 blocked install or degraded doctor, 2 usage error.
-// The general installer in tools/install.mjs is not touched or orchestrated, and
-// nothing outside the destination skills directory is written.
+// It writes nothing outside the destination skills directory, and leaves the
+// general installer in tools/install.mjs untouched.
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
@@ -23,16 +16,11 @@ import { ADAPTER_RESOURCE_PATH, MANIFEST_NAME, buildProjection, doctor, project 
 
 const USAGE = `usage: node tools/antigravity.mjs install|doctor [--gemini-home DIR] [--agystack-source DIR] [--json]
 
-Reviews: install projects the agystack Antigravity plugin (source skills) into
-<gemini-home>/skills as flat, manifest-owned skill directories. doctor reports
-drift, broken links, and the state of the cloud bridge (${ADAPTER_RESOURCE_PATH}).
+install projects the agystack Antigravity plugin into <gemini-home>/skills as
+flat, manifest-owned skill directories. doctor reports drift, broken links,
+and the state of the cloud bridge (${ADAPTER_RESOURCE_PATH}).
 
-  install   project source skills, generated SKILL.md files, resource links
-  doctor    read-only checks; exit 1 when the projection is degraded
-
-Both verbs accept the flags above. --json replaces the human summary with one
-JSON document. Install exits 1 without writing anything when validation fails
-(collisions with user files, drift in owned generated files, a bad manifest).
+Exit codes: 0 success, 1 blocked install or degraded doctor, 2 usage error.
 `;
 
 function parseArgs(argv) {
@@ -77,7 +65,6 @@ function homes(options) {
   const home = homedir();
   const geminiHome = resolve(expandHome(options.geminiHome ?? join(home, ".gemini", "config"), home));
   return {
-    geminiHome,
     destSkillsDir: join(geminiHome, "skills"),
     sourceRoot: resolve(expandHome(options.agystackSource ?? join(geminiHome, "plugins", "agystack"), home)),
     packageRoot: fileURLToPath(new URL("..", import.meta.url)),
@@ -90,10 +77,6 @@ function main() {
   const { destSkillsDir, sourceRoot, packageRoot } = homes(options);
   if (!existsSync(sourceRoot)) usageError(`agystack source "${sourceRoot}" does not exist (pass --agystack-source)`);
   if (options.verb === "install") {
-    const emitBlocked = (payload, human) => {
-      emit(options, payload, human);
-      process.exit(1);
-    };
     try {
       const build = buildProjection({ sourceRoot, destSkillsDir, packageRoot });
       const result = project({ build });
@@ -121,7 +104,8 @@ function main() {
       process.exit(0);
     } catch (error) {
       if (error.name !== "ProjectionBlocked") throw error;
-      emitBlocked(
+      emit(
+        options,
         {
           status: "blocked",
           problems: error.problems,
@@ -130,6 +114,7 @@ function main() {
         },
         [`install blocked before any write (nothing was written):`, ...error.problems.map((p) => `  ${p.code} ${p.path}: ${p.detail}`)].join("\n"),
       );
+      process.exit(1);
     }
   }
   if (options.verb === "doctor") {
@@ -141,7 +126,7 @@ function main() {
       `  manifest entries: ${report.manifest?.entries ?? "no manifest"}`,
       `  drift: ${report.drift.join(", ") || "none"}`,
       `  broken links: ${report.brokenLinks.map((l) => l.path).join(", ") || "none"}`,
-      `  cloud bridge (${ADAPTER_RESOURCE_PATH}): ${report.adapterResource.projected ? "projected" : report.adapterResource.bundled ? "bundled but not projected" : "not shipped by the installed package"}`,
+      `  cloud bridge (${ADAPTER_RESOURCE_PATH}): ${report.adapterResource.projected ? `projected with ${report.adapterResource.projectedFiles} script file(s)` : report.adapterResource.bundled ? "bundled but not projected" : "not shipped by the installed package"}`,
     ];
     report.summary = lines.join("\n");
     emit(options, report, report.summary);

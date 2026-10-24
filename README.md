@@ -32,6 +32,8 @@ The session-start hook tells each new chat when to enter `poteto-mode` on its ow
 
 The plugin carries 65 skill directories, 24 of them `principle-*` leaves, and 4 agents.
 
+For Antigravity, use the [agystack integration](docs/antigravity.md). It keeps agystack's playbooks and Cloud Run swarm backend, with T3 owning the controller tasks.
+
 ## Staying current
 
 This repository syncs from Lauren's tree directly, synced against upstream `88d4751`. `tools/upstream.json` pins each component, `tools/substitutions.json` holds the rewrite rules and a denylist of Cursor terms, and `tools/forks.json` declares every file the port keeps in its own form and why. `bun tools/sync.mjs <component> <sha>` derives each upstream file through the rules, merges it three ways with the port's copy, and fails on an undeclared fork, a denylist hit, or a rule that no longer matches upstream. [CONTRIBUTING.md](CONTRIBUTING.md#the-sync-boundary) has the details.

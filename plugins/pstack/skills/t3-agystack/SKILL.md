@@ -58,7 +58,7 @@ t3-agystack delegate envelope
 role: cloud-controller
 ownership: own exactly one Cloud Run run: one request id, one execution handle
 task: dispatch the swarm plan and return the run handle
-paths: <the XmR state root the cloud run CLI writes>
+paths: <the state root the cloud run CLI writes>
 forbidden: no new runs, no engine rewrites, no credential echoes
 workdir: <repo checkout for the engine>
 deliverable: <run handle, execution id, and state, as JSON>
@@ -66,7 +66,7 @@ provenance: <absolute path of the resolved t3-agystack SKILL.md>
 ---
 ```
 
-That child invokes the cloud bridge at `scripts/cloud-run.mjs` next to this file, which fronts the agystack engine with durable run records. Cloud models, auth, and config stay independent of the composer model and of the projection. Cancellation must stay explicit: killing the controller does not cancel the remote job. One controller per run; a second run wants a second brief or a widened envelope from the coordinator in writing.
+That child invokes the cloud bridge at `scripts/cloud-run.mjs` next to this file, with its sibling modules beside it. The verbs are `dispatch/status/resume/cancel/harvest/list/attach`; `dispatch` requires a fresh `--client-request-id` and may carry `--controller-task-id` as provenance. The bridge fronts the agystack engine with durable run records, never repeats an attempted launch, and treats cancellation as explicit until remote terminal evidence. Cloud models, auth, and config stay independent of the composer model and of the projection. Killing the controller does not cancel the remote job. One controller per run; a second run wants a second brief or a widened envelope from the coordinator in writing.
 
 ## Model routing
 

@@ -32,7 +32,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 
 export const MANIFEST_NAME = ".t3-agystack-manifest.json";
@@ -55,6 +55,23 @@ export class ProjectionBlocked extends Error {
 
 const sha256Hex = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const shortHash = (bytes) => sha256Hex(bytes).slice(0, 16);
+
+// Realpath the deepest existing ancestor of `path` and keep the remainder, so
+// path comparisons across destinations that do not exist yet (and across
+// macOS spellings of the same filesystem) stay consistent. A symlink at the
+// path itself is never dereferenced: on a rerun that leaf is one of this
+// projection's resource links, and following it would resolve to the source.
+export function canonicalPath(path) {
+  path = resolve(path);
+  const origin = path;
+  for (let dir = path; ; dir = dirname(dir)) {
+    const st = lstatSync(dir, { throwIfNoEntry: false });
+    if (st && st.isSymbolicLink()) break;
+    if (st) return realpathSync(dir) + origin.slice(dir.length);
+    if (dir === dirname(dir)) return origin;
+  }
+  return realpathSync(dirname(origin)) + "/" + basename(origin);
+}
 
 function writeAtomic(path, bytes) {
   const temp = join(dirname(path), `.${randomUUID()}.tmp`);
@@ -119,9 +136,9 @@ export function listSourceSkills(sourceRoot) {
 
 // Build the whole projection as a validated command list. Nothing touches the
 // destination here. `packageRoot` is the installed t3-pstack package: it
-// always supplies the adapter skill, and it supplies the cloud bridge at
-// `plugins/pstack/skills/t3-agystack/scripts/cloud-run.mjs` when that unit's
-// artifact has been installed.
+// always supplies the adapter skill, and it supplies the cloud bridge scripts
+// (cloud-run.mjs and its sibling modules under
+// `plugins/pstack/skills/t3-agystack/scripts/`) when the cloud unit is installed.
 export function buildProjection({ sourceRoot, destSkillsDir, packageRoot }) {
   if (!sourceRoot) throw new Error("a --agystack-source (resolved agystack plugin directory) is required");
   if (!destSkillsDir) throw new Error("a destination skills directory is required");
@@ -163,7 +180,10 @@ export function buildProjection({ sourceRoot, destSkillsDir, packageRoot }) {
       entries.push({
         kind: "resource-link",
         path: `${skill.name}/${rel}`,
-        target: relative(dirname(join(destSkillsDir, `${skill.name}/${rel}`)), file),
+        // Both sides of the link are canonicalized through realpath where the
+        // filesystem exists, so macOS aliases like /var vs /private/var and
+        // symlinked plugin dirs compute the same climb on both sides.
+        target: relative(dirname(canonicalPath(join(destSkillsDir, `${skill.name}/${rel}`))), canonicalPath(file)),
         hash: sha256Hex(bytes2),
       });
     }
@@ -175,7 +195,7 @@ export function buildProjection({ sourceRoot, destSkillsDir, packageRoot }) {
     if (seen.has(entry.path)) throw new Error(`projection plan has duplicate path ${entry.path}`);
     seen.add(entry.path);
   }
-  return { sourceRoot: realpathSync(sourceRoot), destSkillsDir, packageRoot: realpathSync(packageRoot), sourceSkillNames: sourceSkills.map((s) => s.name), entries };
+  return { sourceRoot: canonicalPath(sourceRoot), destSkillsDir, packageRoot: realpathSync(packageRoot), sourceSkillNames: sourceSkills.map((s) => s.name), entries };
 }
 
 function listResourceFiles(dir) {
@@ -196,16 +216,13 @@ function listResourceFiles(dir) {
 // (a fresh destination). Present but unreadable or of another schema: refuse,
 // because only an unreadable manifest can guard ownership safely.
 export function readOwnedManifest(destSkillsDir) {
-  const path = join(destSkillsDir, MANIFEST_NAME);
-  const text = (() => {
-    try {
-      return readFileSync(path, "utf8");
-    } catch (error) {
-      if (error.code === "ENOENT") return null;
-      throw error;
-    }
-  })();
-  if (text === null) return { manifest: null, owned: new Map() };
+  let text;
+  try {
+    text = readFileSync(join(destSkillsDir, MANIFEST_NAME), "utf8");
+  } catch (error) {
+    if (error.code === "ENOENT") return { manifest: null, owned: new Map() };
+    throw error;
+  }
   let parsed;
   try {
     parsed = JSON.parse(text);
@@ -324,7 +341,7 @@ export function applyProjection({ build }) {
   };
   const text = `${JSON.stringify(manifest, null, 2)}\n`;
   const manifestPath = join(destSkillsDir, MANIFEST_NAME);
-  if (!existsSync(manifestPath) || readFileSync(manifestPath, "utf8") !== text) writeAtomic(manifestPath, Buffer.from(text, "utf8"));
+  if (!existsSync(manifestPath) || readFileSync(manifestPath, "utf8") !== text) writeAtomic(manifestPath, text);
   return { applied, skipped, removed, manifestPath };
 }
 
@@ -340,7 +357,7 @@ export function project({ build }) {
 // intact manifest, generated files at their recorded hashes, and working
 // links. `absent` means neither a source nor a manifest exists at all.
 export function doctor({ sourceRoot, destSkillsDir, packageRoot }) {
-  const report = { status: "ok", source: { path: sourceRoot, present: false, skills: [] }, manifest: null, drift: [], brokenLinks: [], adapterResource: { bundled: false, projected: false }, userOwnedPaths: [], ok: true };
+  const report = { status: "ok", source: { path: sourceRoot, present: false, skills: [] }, manifest: null, drift: [], brokenLinks: [], adapterResource: { bundled: false, projected: false, projectedFiles: 0 }, userOwnedPaths: [], ok: true };
   if (sourceRoot && existsSync(join(resolve(sourceRoot), "skills"))) {
     try {
       report.source = { path: sourceRoot, present: true, skills: listSourceSkills(sourceRoot).map((s) => s.name) };
@@ -395,8 +412,13 @@ export function doctor({ sourceRoot, destSkillsDir, packageRoot }) {
     else if (!st.isSymbolicLink() && sha256Hex(readFileSync(at)) !== mine.hash) report.drift.push(path);
     else if (st.isSymbolicLink()) report.drift.push(path);
   }
-  report.adapterResource.bundled = existsSync(join(packageRoot ?? "", "plugins/pstack/skills", ADAPTER_RESOURCE_PATH));
-  report.adapterResource.projected = existsSync(join(destSkillsDir, ADAPTER_RESOURCE_PATH));
+  const bundledScripts = join(packageRoot ?? "", "plugins/pstack/skills", ADAPTER_SKILL_NAME, "scripts");
+  const projectedScripts = join(destSkillsDir, ADAPTER_SCRIPTS_DIR);
+  report.adapterResource = {
+    bundled: existsSync(join(bundledScripts, "cloud-run.mjs")),
+    projected: existsSync(join(projectedScripts, "cloud-run.mjs")),
+    projectedFiles: existsSync(projectedScripts) ? listResourceFiles(projectedScripts).length : 0,
+  };
   report.userOwnedPaths = onDisk.filter((path) => path !== MANIFEST_NAME && !owned.has(path));
   if (report.drift.length || report.brokenLinks.length || report.manifest.invalid || !report.source.present) {
     report.status = "degraded";

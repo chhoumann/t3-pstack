@@ -34,8 +34,8 @@ Reinstall from a different source to move or upgrade the agystack plugin the pro
 The destination is `<gemini-home>/skills`, and nothing else.
 
 - One real skill directory per agystack source skill. Its `SKILL.md` is the native bytes with a T3-only routing note inserted after the frontmatter, and a `t3-agystack generated` comment bound to the native source hash. The native text is byte-for-byte preserved; the note is the only insertion.
-- One relative symlink per other native file, so skill-internal pointers such as `skills/swarm/scripts/cloud_dispatch.py` keep working. Links point through `../../../plugins/agystack/...` style relative paths, so a moved home keeps resolving as long as it moves together. Directory symlinks are deliberately not used, because a directory symlink lets `../` paths escape into the source tree and bypass projected overrides.
-- The adapter skill `t3-agystack`, copied byte-for-byte from the installed t3-pstack package. When the package ships `plugins/pstack/skills/t3-agystack/scripts/cloud-run.mjs`, that resource is copied next to it too, keeping the skill's relative reference working.
+- One relative symlink per other native file, so every relative pointer inside a projected skill, including nested `scripts/...` and `references/...`, reads native content from the plugin source. Links point through `../../../plugins/agystack/...` style relative paths, so a moved home keeps resolving as long as it moves together. Directory symlinks are deliberately not used, because a directory symlink lets `../` paths escape into the source tree and bypass projected overrides.
+- The adapter skill `t3-agystack`, copied byte-for-byte from the installed t3-pstack package. Its bridge scripts (`scripts/cloud-run.mjs` and the sibling modules) are copied as a set when the package ships them, keeping the skill's relative references working.
 - A manifest at `<gemini-home>/skills/.t3-agystack-manifest.json` (schema 1). It records exactly the projection's own entries: path, kind, content hash, the native anchor hash, and link targets. Nothing else is listed there, and user-owned files are never adopted into it.
 
 ## Safety behavior
@@ -54,5 +54,5 @@ The full contract lives in `plugins/pstack/skills/t3-agystack/SKILL.md`. The env
 ## Limits
 
 - The delegate envelope is a prompt convention. Live T3 task identity is not verifiable from inside a session, so delegation discipline is disclosed, not enforced at runtime.
-- The cloud bridge ships only when the cloud unit's artifact is installed in the package; `doctor` reports `bundled`/`projected` state either way.
+- The cloud bridge ships when the cloud unit's artifact is installed in the package, and the projection copies it with its siblings; `doctor` reports `bundled`/`projected` state either way.
 - Duplicate skill-name resolution inside standalone Antigravity's scanner and a cold ACP-fallback session are runtime behaviors this tooling cannot prove; verify them on the machine before trusting the projection in anger.
