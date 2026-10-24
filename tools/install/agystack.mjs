@@ -233,7 +233,7 @@ function listResourceFiles(dir) {
 // the projection itself could have produced guards ownership safely. The shape
 // check pins every path inside the destination so the retirement and drift
 // logic can never act outside the projection, whatever the manifest claims.
-export const ENTRY_PATH = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}(?:\/[A-Za-z0-9][A-Za-z0-9._-]{0,63})*$/;
+export const ENTRY_PATH = /^[A-Za-z0-9_][A-Za-z0-9._-]{0,63}(?:\/[A-Za-z0-9_][A-Za-z0-9._-]{0,63})*$/;
 const MANIFEST_KINDS = new Set(["adapter-skill", "adapter-resource", "generated-skill", "resource-link"]);
 const HASH_SHAPE = /^[0-9a-f]{64}$/;
 const ANCHOR_SHAPE = /^(?:[0-9a-f]{16})?$/;

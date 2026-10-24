@@ -25,6 +25,7 @@ import {
   project,
   ProjectionBlocked,
 } from "../tools/install/agystack.mjs";
+import { ENTRY_PATH } from "../tools/install/agystack.mjs";
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const repoAdapterSkill = join(repoRoot, "plugins/pstack/skills/t3-agystack/SKILL.md");
@@ -398,6 +399,15 @@ describe("hostile manifests, retargeted links, and CLI degradation", () => {
   function run(...args) {
     return spawnSync("node", ["tools/antigravity.mjs", ...args], { cwd: repoRoot, encoding: "utf8" });
   }
+
+  test("module-file shapes like __init__.py are legal projection-relative paths and dot segments are not", () => {
+    for (const path of ["swarm/scripts/dispatch/__init__.py", "_private/mod.py", "a/b.c"]) {
+      expect(ENTRY_PATH.test(path), path).toBe(true);
+    }
+    for (const path of ["a/../b", "../escape", "/absolute", ".hidden/file", "a//b", "a/./b"]) {
+      expect(ENTRY_PATH.test(path), path).toBe(false);
+    }
+  });
 
   test("a manifest entry whose path escapes the projection authorizes no deletion and blocks install", () => {
     const home = workdir();
