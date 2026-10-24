@@ -168,7 +168,7 @@ describe("applySubstitutions", () => {
     ["skills/poteto-mode/SKILL.md", "- Contested design → the **interrogate** skill (multi-model adversarial) before shipping.", ["before Opening a PR", "After three fix rounds, stop"]],
     ["skills/arena/SKILL.md", "Prefer a different model family from the parent's.", ["no model scores its own work"]],
     ["skills/poteto-mode/playbooks/babysit.md", "Run `drive` and `background` under `/loop` in dynamic mode.", ["--timeout 540", "watch_pull_request", "--settle"]],
-    ["skills/poteto-mode/playbooks/autopilot-full.md", "Each owner is a Cursor cloud agent that builds, opens its PR", ["t3_thread_launch", "t3_thread_send"]],
+    ["skills/poteto-mode/playbooks/autopilot-full.md", "Each owner is a Cursor cloud agent that builds, opens its PR", ["`delegate_task` child", 'isolation: "worktree"', "taskId", "task_status"]],
     ["skills/no-comments/SKILL.md", '1. Spawn `Task` with `subagent_type: "comment-sicko"`. Pass the scope.', ["<plugin root>/agents/comment-sicko.md", "no worktree"]],
   ])("%s keeps its T3 insert", (rel, upstream, needles) => {
     const { text } = applySubstitutions(upstream, RULES.substitutions, rel);
