@@ -475,8 +475,8 @@
     },
     {
       "pattern": "When a worker must start from a non-default pushed branch, pass `cloud_base_branch`.",
-      "replacement": "When a worker must start from a non-default branch, put the parent on that branch and commit the required changes before dispatch. T3 worktree isolation starts from the parent's local commit, without uncommitted edits.",
-      "rationale": "T3 worktree isolation starts at the parent local commit, not a cloud_base_branch or a manually created worktree"
+      "replacement": "When a worker needs a different branch or PR head, leave the parent checkout unchanged. Before dispatch, resolve the intended committed target to an exact SHA with `git rev-parse --verify <target>^{commit}` (fetch first if needed), and include that SHA in the brief. Use `isolation: \"worktree\"`; T3 initially creates the worktree from the parent's local commit and runs project setup at that commit, without copying uncommitted edits. Inside its assigned worktree, the worker runs `git checkout --detach <sha>`, confirms `git rev-parse HEAD` matches the requested SHA, and reruns the project's setup as needed for that target before behavioral verification. Keep the assigned worktree path and the live owner's branch unchanged; never force the checkout.",
+      "rationale": "T3 initially isolates at the parent local commit; select an explicit target and refresh setup inside the assigned worktree without moving the parent onto a branch held by a live owner"
     },
     {
       "pattern": "Transcripts live at `~/.cursor/projects/<slug>/agent-transcripts/<uuid>/<uuid>.jsonl`, where `<slug>` is the workspace path with the leading slash dropped and each \"/\" turned into \"-\" (so `/Users/you/proj` becomes `Users-you-proj`). Every line is one chat message.",
@@ -762,8 +762,8 @@
     {
       "files": "^skills/poteto-mode/playbooks/",
       "pattern": "One verifier per PR, each a Cursor cloud agent, runs the change the way a user would with the matching control skill (such as `control-ui` or `control-cli` from `cursor-team-kit`), parent against head,",
-      "replacement": "One verifier per PR, each a `delegate_task` child with `isolation: \"worktree\"` from the parent's committed PR head, runs the change the way a user would with the matching control skill in poteto-mode's Non-negotiables, parent against head,",
-      "rationale": "Playbooks: Shipping; UI evidence"
+      "replacement": "Resolve each PR head to an exact committed SHA before dispatch and include it in the verifier brief. One verifier per PR, each a `delegate_task` child with `isolation: \"worktree\"`, uses its assigned worktree and follows the **swarm** skill's target checkout and setup instructions. It runs the change the way a user would with the matching control skill in poteto-mode's Non-negotiables, parent against head,",
+      "rationale": "Playbooks: Shipping; verify an explicit PR head in the assigned child worktree through swarm, leaving the parent and PR owner checkouts unchanged"
     },
     {
       "pattern": "`/loop` per component until the diff is zero.",

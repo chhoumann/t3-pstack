@@ -8,6 +8,8 @@ Independent review rounds now use fresh `delegate_task` calls with the original 
 
 Autopilot-full owners are delegated children, and orchestrate manages their lifecycle through `delegate_task`, `task_status`, and `task_cancel`. Ordinary top-level conversations require an explicit user request. Writing children use T3's `isolation: "worktree"` from the parent's local commit, with project setup and without uncommitted edits. The substitutions and existing declared forks carry these rules. Regression tests read the distributed skills through the existing CI test job. All three upstream pins remain at `4ec7ffa`.
 
+Verifiers resolve the committed branch or PR head to an exact SHA before dispatch. The parent keeps its checkout. After T3 creates the isolated worktree and runs setup at the parent's commit, the verifier checks out the target SHA detached inside its assigned worktree, confirms HEAD, and reruns setup as needed before behavioral verification. A Git fixture executes the distributed recipe with the PR branch held by an active owner and the parent on main.
+
 This contributor patch leaves the release number unchanged. Include it in the next maintainer release so installed copies receive the fix.
 
 ## 2.0.0-rc.18 - Lauren's `4ec7ffa`: statechart stops on inputs it used to chart wrong without saying so

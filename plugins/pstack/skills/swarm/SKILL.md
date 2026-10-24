@@ -26,7 +26,7 @@ Open a todolist with one entry per phase before launching anything.
 
 Spawn all N workers in one response as `delegate_task` calls with `mode: "async"` and the step 4 `target`, left unset for `auto` or `inherit-parent`. Every worker runs on this machine. A worker that writes uses `isolation: "worktree"` and writes only in its assigned worktree.
 
-When a worker must start from a non-default branch, put the parent on that branch and commit the required changes before dispatch. T3 worktree isolation starts from the parent's local commit, without uncommitted edits.
+When a worker needs a different branch or PR head, leave the parent checkout unchanged. Before dispatch, resolve the intended committed target to an exact SHA with `git rev-parse --verify <target>^{commit}` (fetch first if needed), and include that SHA in the brief. Use `isolation: "worktree"`; T3 initially creates the worktree from the parent's local commit and runs project setup at that commit, without copying uncommitted edits. Inside its assigned worktree, the worker runs `git checkout --detach <sha>`, confirms `git rev-parse HEAD` matches the requested SHA, and reruns the project's setup as needed for that target before behavioral verification. Keep the assigned worktree path and the live owner's branch unchanged; never force the checkout.
 
 Every brief stands alone. Include the goal, scope, exact slice or race arm, how to verify, and what to report. Reports use `PASS`, `ISSUES`, or `BLOCKED` with evidence. A worker that can prove a defect reports `ISSUES` and lists every issue it can prove, not only the first.
 

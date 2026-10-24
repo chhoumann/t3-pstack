@@ -20,7 +20,7 @@
     },
     "plugins/pstack/skills/poteto-mode/playbooks/shipping.md": {
       "kind": "policy",
-      "why": "Adds --match-head-commit <head> to the GitHub merge in step 4, the head guard from Michael Denyer's pstack-claude, with the current head whose verdict survives step 3's patch-id rule, so a head pushed after that check cannot land, and stops step 5's watcher loop at a merge gate that needs a person. Verification children use delegate_task worktree isolation from the parent committed PR head.",
+      "why": "Adds --match-head-commit <head> to the GitHub merge in step 4, the head guard from Michael Denyer's pstack-claude, with the current head whose verdict survives step 3's patch-id rule, so a head pushed after that check cannot land, and stops step 5's watcher loop at a merge gate that needs a person. Verification children use delegate_task worktree isolation, then select the exact committed PR SHA and refresh setup in their assigned worktree per swarm, leaving the parent checkout unchanged.",
       "since": "2.0.0-rc.2",
       "upstream": "not-proposed"
     },
