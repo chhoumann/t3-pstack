@@ -24,9 +24,9 @@ Open a todolist with one entry per phase before launching anything.
 
 ## Phase B: Fan out
 
-Spawn all N workers in one response as `delegate_task` calls with `mode: "async"` and the step 4 `target`, left unset for `auto` or `inherit-parent`. Every worker runs on this machine, so a worker that writes gets its own git worktree, named by absolute path in its brief as the only place it writes.
+Spawn all N workers in one response as `delegate_task` calls with `mode: "async"` and the step 4 `target`, left unset for `auto` or `inherit-parent`. Every worker runs on this machine. A worker that writes uses `isolation: "worktree"` and writes only in its assigned worktree.
 
-When a worker must start from a non-default branch, create its worktree from that branch.
+When a worker must start from a non-default branch, put the parent on that branch and commit the required changes before dispatch. T3 worktree isolation starts from the parent's local commit, without uncommitted edits.
 
 Every brief stands alone. Include the goal, scope, exact slice or race arm, how to verify, and what to report. Reports use `PASS`, `ISSUES`, or `BLOCKED` with evidence. A worker that can prove a defect reports `ISSUES` and lists every issue it can prove, not only the first.
 

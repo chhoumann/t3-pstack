@@ -2,25 +2,25 @@
   "pstack": {
     "plugins/pstack/skills/poteto-mode/SKILL.md": {
       "kind": "policy",
-      "why": "Carries four rules from Michael Denyer's pstack-claude in T3 wording: load a managed platform's skill before deploying, stop an abandoned agent whose writes could overlap its replacement's with task_cancel and confirm with task_status that it stopped, which Autopilot-full's immediate replacement of a stuck agent overrides, keep a review gate closed while no independent reviewer can run, and keep the todolist in .audit/<task-slug>.todo.md when the session has no task tool.",
+      "why": "Carries four rules from Michael Denyer's pstack-claude in T3 wording: load a managed platform's skill before deploying, stop an abandoned agent whose writes could overlap its replacement's with task_cancel and confirm with task_status that it stopped, which Autopilot-full's immediate replacement of a stuck agent overrides, keep a review gate closed while no independent reviewer can run, and keep the todolist in .audit/<task-slug>.todo.md when the session has no task tool. The T3 dispatch insert also requires fresh independent review rounds, reserves top-level conversations for explicit user requests, and uses delegate_task worktree isolation.",
       "since": "2.0.0-rc.2",
       "upstream": "not-proposed"
     },
     "plugins/pstack/skills/poteto-mode/playbooks/feature.md": {
       "kind": "policy",
-      "why": "Points step 4 at the Subagents rule that every file-writing delegate gets its own worktree from HEAD, and carries the rule from Michael Denyer's pstack-claude that the delegator commits what the delegate builds on, names that commit in the brief, and never writes or runs a suite in a worktree a delegate still holds.",
+      "why": "Points step 4 at the Subagents rule that every file-writing delegate uses delegate_task with isolation: \"worktree\" from the parent local commit, and carries the rule from Michael Denyer's pstack-claude that the delegator commits what the delegate builds on, names that commit in the brief, and never writes or runs a suite in a worktree a delegate still holds.",
       "since": "2.0.0-rc.2",
       "upstream": "not-proposed"
     },
     "plugins/pstack/skills/poteto-mode/playbooks/opening-a-pr.md": {
       "kind": "policy",
-      "why": "Carries the rule from Michael Denyer's pstack-claude that every live agent holding a worktree is stopped, and the stop confirmed, before a commit, merge, or deploy from it, and drops the reset --hard between delegates on one branch so that each gets its own worktree.",
+      "why": "Carries the rule from Michael Denyer's pstack-claude that every live agent holding a worktree is stopped, and the stop confirmed, before a commit, merge, or deploy from it, and drops the reset --hard between delegates on one branch so that each gets its own worktree. Writing children use T3 worktree isolation from committed parent state rather than inheriting the parent worktree.",
       "since": "2.0.0-rc.2",
       "upstream": "not-proposed"
     },
     "plugins/pstack/skills/poteto-mode/playbooks/shipping.md": {
       "kind": "policy",
-      "why": "Adds --match-head-commit <head> to the GitHub merge in step 4, the head guard from Michael Denyer's pstack-claude, with the current head whose verdict survives step 3's patch-id rule, so a head pushed after that check cannot land, and stops step 5's watcher loop at a merge gate that needs a person.",
+      "why": "Adds --match-head-commit <head> to the GitHub merge in step 4, the head guard from Michael Denyer's pstack-claude, with the current head whose verdict survives step 3's patch-id rule, so a head pushed after that check cannot land, and stops step 5's watcher loop at a merge gate that needs a person. Verification children use delegate_task worktree isolation from the parent committed PR head.",
       "since": "2.0.0-rc.2",
       "upstream": "not-proposed"
     },

@@ -259,15 +259,15 @@
       "files": "^skills/poteto-mode/SKILL\\.md$"
     },
     {
-      "pattern": "Resume, message, or queue a follow-up on an existing subagent only when",
-      "replacement": "Send a follow-up to an existing child (`t3_thread_send` to its `childThreadId`) only when",
-      "rationale": "Tool actions: Continue a subagent",
+      "pattern": "Resume, message, or queue a follow-up on an existing subagent only when the new work strictly needs state that lives in that agent and is costly to move: its local checkout, its uncommitted changes, or a process it still runs, such as a dev server, a simulator, or a babysit watcher.",
+      "replacement": "Send a follow-up to an existing child (`t3_thread_send` to its `childThreadId`) only when the new work strictly needs state that lives in that agent and is costly to move: its local checkout, its uncommitted changes, or a process it still runs, such as a dev server, a simulator, or a babysit watcher. This same-conversation exception never applies to independent review rounds.",
+      "rationale": "T3 child lifecycle: preserve costly-state conversation continuation, but every independent review round is a fresh delegated task (live T3 contract, 2026-10-24)",
       "files": "^skills/poteto-mode/SKILL\\.md$"
     },
     {
       "pattern": "Interrupt-chained resumes silently drop directives, so fire a fresh subagent with consolidated scope rather than trusting a \"done\" summary.",
-      "replacement": "Interrupt-chained resumes silently drop directives, so fire a fresh subagent with consolidated scope rather than trusting a \"done\" summary.\n\n**Dispatch on T3.** Every subagent is a `delegate_task` call from the chat that runs the playbook, same model family included, so every child shows up in T3. Give each call its own `clientRequestId`, stable across retries of that call, and keep each returned `taskId`. A child's completion wakes this thread, so end the turn instead of polling, and call `task_status` only when a result is needed mid-turn. `task_cancel` stops a child, and `task_status` confirms it stopped. A child gets only its brief, never your context, so pass absolute paths. `<plugin root>` is the absolute path of the directory that holds this plugin's `skills/` and `agents/`. A persona (`poteto-agent`, `comment-sicko`, `thermo-nuclear-review-subagent`, `thermo-nuclear-code-quality-review-subagent`) is a brief that opens with \"Read `<plugin root>/agents/<name>.md` in full and act as it says\", and a `poteto-agent` brief also names this file's absolute path.\n\nA child starts in your checkout. One that writes gets its own worktree, created with `git worktree add` from `HEAD` so it builds on your branch's commits. The brief names that absolute path as the only place it writes, and tells it to run every command there (`workdir` on Codex) and to edit by absolute path. Record your own `git status --porcelain` before you dispatch, check after the result that it is unchanged, then remove the worktree and its branch. A step a playbook says to delegate goes to `delegate_task` on that role's sheet entry, not into your own tool calls, unless you state a reason such as a step too small to brief. A research delegate no role names runs on the `how explorer` entry. A model's family is the first segment of its ID's last `/` part, such as `claude`, `gpt`, or `grok`, whatever provider instance serves it, and your own family is the one in `orchestrator_capabilities`' `inheritedModel`. A rejected target runs on another target of the same family from `orchestrator_capabilities`, and you say so. A required review with no reviewer from another family stays `BLOCKED: independent review`.\n\nEnd every reply that ran a playbook with a dispatch ledger: one line per delegated step, naming the role and the `providerInstanceId/model` it ran on, or `in-thread: <reason>`.",
-      "rationale": "inserts the T3 dispatch policy at the end of the Subagents section (Tool actions; Subagent policy)",
+      "replacement": "Interrupt-chained resumes silently drop directives, so fire a fresh subagent with consolidated scope rather than trusting a \"done\" summary.\n\n**Dispatch on T3.** Every subagent is a `delegate_task` call from the chat that runs the playbook, same model family included, so every child shows up in T3. Give each call its own `clientRequestId`, stable across retries of that call, and keep each returned `taskId`. A child's completion wakes this thread, so end the turn instead of polling, and call `task_status` only when a result is needed mid-turn. `task_cancel` stops a child, and `task_status` confirms it stopped. A child gets only its brief, never your context, so include explicit task context and absolute paths. `childThreadId` is the child's backing conversation. `t3_thread_launch` and `create_threads` create ordinary top-level conversations only for an explicit user request for separate threads; a request for parallel workers or subagents alone does not authorize them. `<plugin root>` is the absolute path of the directory that holds this plugin's `skills/` and `agents/`. A persona (`poteto-agent`, `comment-sicko`, `thermo-nuclear-review-subagent`, `thermo-nuclear-code-quality-review-subagent`) is a brief that opens with \"Read `<plugin root>/agents/<name>.md` in full and act as it says\", and a `poteto-agent` brief also names this file's absolute path.\n\n**Independent review rounds.** Call a fresh `delegate_task` for every new round, with the original brief, prior findings, responses, and unresolved objections. Give each round a distinct `clientRequestId`, stable across retries of that round, and retain its returned `taskId`. Never start a new review round through `t3_thread_send` to the previous child's `childThreadId`.\n\nA child that needs a separate checkout uses `delegate_task` with `isolation: \"worktree\"`. Every child that writes gets this isolation. T3 creates the worktree from the parent's local commit and runs project setup. Uncommitted edits are not copied, so commit what it builds on before dispatch. The brief tells it to write and run every command only in its assigned worktree (`workdir` on Codex). Record your own `git status --porcelain` before dispatch and check after the result that it is unchanged. A step a playbook says to delegate goes to `delegate_task` on that role's sheet entry, not into your own tool calls, unless you state a reason such as a step too small to brief. A research delegate no role names runs on the `how explorer` entry. A model's family is the first segment of its ID's last `/` part, such as `claude`, `gpt`, or `grok`, whatever provider instance serves it, and your own family is the one in `orchestrator_capabilities`' `inheritedModel`. A rejected target runs on another target of the same family from `orchestrator_capabilities`, and you say so. A required review with no reviewer from another family stays `BLOCKED: independent review`.\n\nEnd every reply that ran a playbook with a dispatch ledger: one line per delegated step, naming the role and the `providerInstanceId/model` it ran on, or `in-thread: <reason>`.",
+      "rationale": "T3-owned dispatch, independent review rounds, top-level thread boundary, and app-managed worktree isolation (live T3 contract, 2026-10-24)",
       "files": "^skills/poteto-mode/SKILL\\.md$"
     },
     {
@@ -470,13 +470,13 @@
     },
     {
       "pattern": "Spawn all N workers in one message with `subagent_type: generalPurpose`, `environment: \"cloud\"`, `run_in_background: true`, and the step 4 model, left unset for `auto` or `inherit-parent`. Use `environment: \"local\"` only when the worker needs access to something on the user's computer.",
-      "replacement": "Spawn all N workers in one response as `delegate_task` calls with `mode: \"async\"` and the step 4 `target`, left unset for `auto` or `inherit-parent`. Every worker runs on this machine, so a worker that writes gets its own git worktree, named by absolute path in its brief as the only place it writes.",
-      "rationale": "Per-skill notes: swarm"
+      "replacement": "Spawn all N workers in one response as `delegate_task` calls with `mode: \"async\"` and the step 4 `target`, left unset for `auto` or `inherit-parent`. Every worker runs on this machine. A worker that writes uses `isolation: \"worktree\"` and writes only in its assigned worktree.",
+      "rationale": "Per-skill notes: swarm; T3 creates writing children's worktrees through isolation, not a shared task pointed at a manually created worktree"
     },
     {
       "pattern": "When a worker must start from a non-default pushed branch, pass `cloud_base_branch`.",
-      "replacement": "When a worker must start from a non-default branch, create its worktree from that branch.",
-      "rationale": "no cloud base branch on T3"
+      "replacement": "When a worker must start from a non-default branch, put the parent on that branch and commit the required changes before dispatch. T3 worktree isolation starts from the parent's local commit, without uncommitted edits.",
+      "rationale": "T3 worktree isolation starts at the parent local commit, not a cloud_base_branch or a manually created worktree"
     },
     {
       "pattern": "Transcripts live at `~/.cursor/projects/<slug>/agent-transcripts/<uuid>/<uuid>.jsonl`, where `<slug>` is the workspace path with the leading slash dropped and each \"/\" turned into \"-\" (so `/Users/you/proj` becomes `Users-you-proj`). Every line is one chat message.",
@@ -564,14 +564,14 @@
     {
       "files": "^skills/poteto-mode/playbooks/",
       "pattern": "Each owner is a Cursor cloud agent that builds, opens its PR",
-      "replacement": "Each owner is a top-level T3 thread that `t3_thread_launch` starts with `workspaceStrategy: {type: \"worktree\", baseRef, branch, startFromOrigin: false}` and a brief that names this playbook and this thread's ID, so the owner reports back with `t3_thread_send`. It builds, opens its PR",
-      "rationale": "Playbooks: Autopilot-full (each PR owner is a t3_thread_launch thread in its own worktree)"
+      "replacement": "Each owner is a `delegate_task` child with `mode: \"async\"` and `isolation: \"worktree\"`, started from the parent's committed trunk checkout. Its brief names this playbook and the PR scope. Retain its `taskId`; completion wakes the parent, and `task_status` reads progress when needed. It builds, opens its PR",
+      "rationale": "Autopilot-full owners are child tasks in T3-managed worktrees; worker fan-out never authorizes top-level conversations"
     },
     {
       "files": "^skills/poteto-mode/playbooks/",
       "pattern": "Assume the VM dies.",
       "replacement": "Assume the owner's session dies.",
-      "rationale": "no cloud VMs on T3; an owner is a T3 thread"
+      "rationale": "no cloud VMs on T3; an owner is a delegated child task"
     },
     {
       "files": "^skills/poteto-mode/playbooks/",
@@ -701,8 +701,8 @@
     },
     {
       "pattern": "Agents are spawned, resumed, and drained only through the Task tool.",
-      "replacement": "Agents are spawned, resumed, and drained only through `delegate_task`, `t3_thread_send` to a child's `childThreadId`, and `task_status`.",
-      "rationale": "Tool actions",
+      "replacement": "Manage the child lifecycle through `delegate_task`, `task_status`, and `task_cancel`. A costly-state same-conversation continuation may use `t3_thread_send` to its `childThreadId` per poteto-mode's Subagents section, but independent review rounds always require a fresh `delegate_task` with the full review history and a distinct round `clientRequestId`, stable across retries. Retain each returned `taskId`. Completion wakes this thread; do not poll for it.",
+      "rationale": "T3 child lifecycle, costly-state continuation exception, and fresh independent review override (live T3 contract, 2026-10-24)",
       "files": "^skills/poteto-mode/playbooks/"
     },
     {
@@ -713,7 +713,7 @@
     },
     {
       "pattern": "- **Worker / verifier.** Always `environment: \"cloud\"` unless the task needs this machine: `control-ui` or `control-cli` runtime verification (from `cursor-team-kit`). Reading local transcripts under `agent-transcripts/`. Simulators and local IDE state. Auth that exists only here. Cloud agents cannot read the local store, so their briefs inline what they need or point at repo paths.",
-      "replacement": "- **Worker / verifier.** Always a `delegate_task` child in its own git worktree, named by absolute path in its brief as the only place it writes. Every child runs on this machine, so it can drive the real surface, read T3 threads, and use local auth. A child starts without your context, so its brief inlines what it needs or points at repo paths.",
+      "replacement": "- **Worker / verifier.** Always a `delegate_task` child with `isolation: \"worktree\"`, using its assigned worktree as the only place it writes. Every child runs on this machine, so it can drive the real surface, read T3 threads, and use local auth. A child starts without your context, so its brief inlines what it needs or points at repo paths.",
       "rationale": "Playbooks: Orchestrate; Subagent policy (worktree)",
       "files": "^skills/poteto-mode/playbooks/"
     },
@@ -762,7 +762,7 @@
     {
       "files": "^skills/poteto-mode/playbooks/",
       "pattern": "One verifier per PR, each a Cursor cloud agent, runs the change the way a user would with the matching control skill (such as `control-ui` or `control-cli` from `cursor-team-kit`), parent against head,",
-      "replacement": "One verifier per PR, each a `delegate_task` child in its own worktree, runs the change the way a user would with the matching control skill in poteto-mode's Non-negotiables, parent against head,",
+      "replacement": "One verifier per PR, each a `delegate_task` child with `isolation: \"worktree\"` from the parent's committed PR head, runs the change the way a user would with the matching control skill in poteto-mode's Non-negotiables, parent against head,",
       "rationale": "Playbooks: Shipping; UI evidence"
     },
     {
@@ -1007,7 +1007,7 @@
     },
     {
       "regex": "\\bcloud[- ](?:agents?|VMs?|workers?|work|default)\\b|cloud_base_branch|environment: \"|Cursor dashboard",
-      "hint": "Cursor cloud agents; delegate_task children in worktrees or t3_thread_launch threads"
+      "hint": "Cursor cloud agents; delegate_task children with isolation: \"worktree\""
     },
     {
       "token": "create-skill",
