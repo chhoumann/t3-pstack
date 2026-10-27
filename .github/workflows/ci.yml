@@ -127,9 +127,13 @@ jobs:
       - name: Check formatting
         run: bunx prettier@3.6.2 --check watch-pr/settle.ts watch-pr/settle.test.ts watch-pr/verdicts.test.ts resolve-codex-transcript.ts
 
-  # The same step as upstream's validate-plugins.yml, on the Node it uses,
-  # which is also the oldest the installer accepts. The runner has no TLC, so
-  # the statechart tests that need it skip.
+  # The same test step as upstream's validate-plugins.yml, on the Node 22 it
+  # uses, the oldest line the statechart launcher runs TypeScript on.
+  # Upstream installs fast-check outside a lockfile, so the root bun.lock
+  # pins the version the statechart scripts' package.json names. node --test
+  # passes on a glob that matches nothing, so failglob fails the step
+  # instead. The runner has no TLC, so the statechart tests that need it
+  # skip.
   skill-scripts:
     name: Skill script tests
     runs-on: ubuntu-latest
@@ -139,9 +143,16 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: "20"
+          node-version: "22"
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: "1.3.14"
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
       - name: Test skill scripts
-        run: node --test plugins/pstack/skills/*/scripts/test/*.test.mjs
+        run: |
+          shopt -s failglob
+          node --disable-warning=ExperimentalWarning --test plugins/pstack/skills/*/scripts/test/*.test.ts
 
   shellcheck:
     name: Shell scripts

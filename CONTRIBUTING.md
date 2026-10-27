@@ -89,7 +89,7 @@ uvx zizmor@1.29.0 --persona pedantic --min-severity low --collect all -- .
 
 ## Dependency updates
 
-Dependabot keeps the pinned action SHAs current. The vendored scripts' one runtime dependency (`commander`) follows upstream's pin and moves with `tools/sync.mjs`. `osv-scanner` scans every `bun.lock` weekly. The root `bun.lock` pins `typebox`, which the generator uses to check the hooks files.
+Dependabot keeps the pinned action SHAs current. The vendored scripts' one runtime dependency (`commander`) follows upstream's pin and moves with `tools/sync.mjs`. `osv-scanner` scans every `bun.lock` weekly. The root `bun.lock` pins `typebox`, which the generator uses to check the hooks files, and `fast-check`, which the statechart tests import. Upstream installs fast-check in CI without a lockfile, so when the statechart scripts' `package.json` moves its version, move the root pin with it.
 
 ## Releasing
 
