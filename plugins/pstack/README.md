@@ -9,7 +9,7 @@ Tell `poteto-mode` your goal and it runs the workflow that fits: reproduce and r
 - Skills: upstream's skill text, with its Cursor mechanics rewritten for T3. Each appears as `/t3-pstack:<name>`.
 - Agents: `poteto-agent`, `comment-sicko`, and the two thermo-nuclear reviewers, each read by path in a `delegate_task` brief.
 - A session-start hook that tells each chat when to enter `poteto-mode`, unless your model sheet turns it off.
-- Local scripts for watching pull requests, orchestrating multi-phase plans, checking plans, and auditing worktrees.
+- Local scripts for watching pull requests, checking plans, and auditing worktrees.
 
 ## Data handling
 

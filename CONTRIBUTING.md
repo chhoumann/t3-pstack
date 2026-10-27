@@ -57,8 +57,8 @@ If you touched `skills/poteto-mode/scripts/`:
 cd plugins/pstack/skills/poteto-mode/scripts
 bun install --frozen-lockfile
 bun run typecheck
-GIT_CONFIG_GLOBAL=/dev/null bun test orch watch-pr check-plan.test.ts
-bunx prettier@3.6.2 --check watch-pr/settle.ts watch-pr/settle.test.ts resolve-codex-transcript.ts
+GIT_CONFIG_GLOBAL=/dev/null bun test watch-pr check-plan.test.ts
+bunx prettier@3.6.2 --check watch-pr/settle.ts watch-pr/settle.test.ts watch-pr/verdicts.test.ts resolve-codex-transcript.ts
 ```
 
 Upstream's scripts are not Prettier output, so the format check covers the port's own TypeScript only.

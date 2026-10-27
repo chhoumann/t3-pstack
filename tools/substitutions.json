@@ -630,9 +630,21 @@
     },
     {
       "files": "^skills/poteto-mode/playbooks/orchestrate\\.md$",
-      "pattern": " Store reads are slow, so copy each store file to local disk once and never search the whole store.",
-      "replacement": " Never search the whole store.",
-      "rationale": "Cursor's agent store reads slowly, so upstream copies each file to local disk once. On T3 the store is ${XDG_STATE_HOME:-~/.local/state}/t3-pstack/ on local disk, so the copy buys nothing, and a copy of a file another agent writes goes stale while readers aggregate at read time. The store holds every project's files, so the rule against searching it whole stays"
+      "pattern": "Keep the program's state in the Project tracker (`notes.md`) and the Project store. Watch each PR with PR and CI event subscriptions when your harness has them.",
+      "replacement": "Keep the program's state in `${XDG_STATE_HOME:-~/.local/state}/t3-pstack/orchestrate/<project-slug>/`, with the tracker in its `notes.md`. Watch each PR with `watch_pull_request` when this thread has it. It wakes this thread on failed checks, passed required checks, new comments or reviews, and conflicts.",
+      "rationale": "T3 has no Cursor Project tracker or store, so the program's state lives in the port's store directory on local disk, the one Autopilot-full and the show-me-your-work trail use. T3's PR and CI event subscription is watch_pull_request, and the wakes it lists are the ones its tool description names. T3 gives a delegated child no watch_pull_request, so a sub-coordinator has none and the condition stays"
+    },
+    {
+      "files": "^skills/poteto-mode/playbooks/orchestrate\\.md$",
+      "pattern": "Run workers on a new cloud VM (`environment: \"cloud\"`) unless the work needs this machine: a `control-ui` or `control-cli` runtime check (from `cursor-team-kit`), local transcripts, a simulator, or auth that exists only here.",
+      "replacement": "Every worker runs on this machine, and one that writes gets its own git worktree, named by absolute path in its kickoff as the only place it writes.",
+      "rationale": "no cloud VMs on T3, so every delegate_task child runs locally and the exceptions Lauren lists need nothing; a writing child gets its own worktree per poteto-mode's Dispatch on T3"
+    },
+    {
+      "files": "^skills/poteto-mode/playbooks/orchestrate\\.md$",
+      "pattern": "- **Fork when new work needs a worker's built state,** such as its checkout, uncommitted changes, or a running process. Message a worker only for a follow-up on the same work.",
+      "replacement": "- **Reuse a worker's worktree when new work needs its built state,** such as its checkout, uncommitted changes, or a running process. Once that worker is done, start a fresh one there. Message a worker, with `t3_thread_send` to its `childThreadId`, only for a follow-up on the same work.",
+      "rationale": "T3 cannot fork a child. The built state lives in the worker's worktree on this machine, so a fresh delegate_task child there inherits it, and waiting until the first worker is done keeps one writer per worktree. A message to a child is t3_thread_send, which starts a new turn on an idle child as Lauren's next sentence says"
     },
     {
       "files": "^skills/poteto-mode/playbooks/",
@@ -728,60 +740,6 @@
       "pattern": "Each live lane runs on its own cloud VM at the PR head. Drive through `control-ui` or `control-cli` from `cursor-team-kit`.",
       "replacement": "Each live lane runs in its own worktree at the PR head. Drive through the control skill above.",
       "rationale": "no cloud VMs on T3; UI evidence",
-      "files": "^skills/poteto-mode/playbooks/"
-    },
-    {
-      "pattern": "Agents are spawned, resumed, and drained only through the Task tool.",
-      "replacement": "Agents are spawned, resumed, and drained only through `delegate_task`, `t3_thread_send` to a child's `childThreadId`, and `task_status`.",
-      "rationale": "Tool actions",
-      "files": "^skills/poteto-mode/playbooks/"
-    },
-    {
-      "pattern": "(nesting works to depth 3, and a nested spawn has the full Task schema including `environment`)",
-      "replacement": "(a `delegate_task` child can delegate its own)",
-      "rationale": "Tool actions: Dispatch",
-      "files": "^skills/poteto-mode/playbooks/"
-    },
-    {
-      "pattern": "- **Worker / verifier.** Always `environment: \"cloud\"` unless the task needs this machine: `control-ui` or `control-cli` runtime verification (from `cursor-team-kit`). Reading local transcripts under `agent-transcripts/`. Simulators and local IDE state. Auth that exists only here. Cloud agents cannot read the local store, so their briefs inline what they need or point at repo paths.",
-      "replacement": "- **Worker / verifier.** Always a `delegate_task` child in its own git worktree, named by absolute path in its brief as the only place it writes. Every child runs on this machine, so it can drive the real surface, read T3 threads, and use local auth. A child starts without your context, so its brief inlines what it needs or points at repo paths.",
-      "rationale": "Playbooks: Orchestrate; Subagent policy (worktree)",
-      "files": "^skills/poteto-mode/playbooks/"
-    },
-    {
-      "pattern": "in the current agent's store (path in the system prompt).",
-      "replacement": "in `${XDG_STATE_HOME:-~/.local/state}/t3-pstack/` (T3 names no agent store).",
-      "rationale": "no Cursor agent store on T3",
-      "files": "^skills/poteto-mode/playbooks/"
-    },
-    {
-      "pattern": "its spawn budget with the cloud default and the local exception list,",
-      "replacement": "its spawn budget,",
-      "rationale": "no cloud default on T3",
-      "files": "^skills/poteto-mode/playbooks/"
-    },
-    {
-      "files": "^skills/poteto-mode/playbooks/",
-      "pattern": "Chain rebases run in cloud. A local rebase at this scale takes the laptop down.",
-      "replacement": "Chain rebases run one at a time, each in its own worktree, because a rebase at this scale can take the laptop down.",
-      "rationale": "no cloud on T3; every child runs on this machine"
-    },
-    {
-      "pattern": "Work that exists only on one VM when that VM dies was never done.",
-      "replacement": "Work that exists only in one worktree when that worktree is removed was never done.",
-      "rationale": "no cloud VMs on T3",
-      "files": "^skills/poteto-mode/playbooks/"
-    },
-    {
-      "pattern": "the cloud agent's status in the Cursor dashboard.",
-      "replacement": "each child's `task_status`.",
-      "rationale": "Tool actions: List subagents",
-      "files": "^skills/poteto-mode/playbooks/"
-    },
-    {
-      "pattern": "- After a Cursor restart: local agents are dead, cloud work is not. Re-read the standing orders and `units.tsv`, recompute the frontier, reattach cloud work by PR and branch rather than agent id,",
-      "replacement": "- After a T3 restart: in-flight turns stop, while T3 threads, their worktrees, and pushed branches survive. Re-read the standing orders and `units.tsv`, recompute the frontier, reattach work by PR and branch rather than task id,",
-      "rationale": "no cloud agents on T3",
       "files": "^skills/poteto-mode/playbooks/"
     },
     {
@@ -1073,6 +1031,10 @@
     {
       "regex": "(?:^|[\\s`(])/visualize\\b",
       "hint": "Cursor's canvas command; T3 renders a page inline with html_render"
+    },
+    {
+      "regex": "\\bProject (?:tracker|store)\\b",
+      "hint": "Cursor Projects; T3 keeps program state under ${XDG_STATE_HOME:-~/.local/state}/t3-pstack/"
     }
   ]
 }
