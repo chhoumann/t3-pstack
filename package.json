@@ -1,7 +1,7 @@
 {
   "name": "t3-pstack",
   "private": true,
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "The installer and development tooling for t3-pstack, Lauren Tan's pstack rewritten in place for T3 Code. The plugin itself lives in plugins/pstack.",
   "author": {
     "name": "Christian Bager Bach Houmann",
