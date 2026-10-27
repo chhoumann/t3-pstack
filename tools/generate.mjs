@@ -9,8 +9,8 @@
 //               the Claude Code marketplace entry, and package.json
 //   CHANGES.md must carry a heading for the current VERSION (release completeness)
 //   plugins/pstack/models.json (the T3 model policy: tier defaults and roles)
-//     -> each model-consuming skill's "## Models" section, interrogate's
-//        reviewer table, and setup-pstack's sheet block (tools/derive-t3.mjs)
+//     -> each model-consuming skill's "## Models" section and setup-pstack's
+//        sheet block (tools/derive-t3.mjs)
 //   plugins/pstack/agents/*.md -> the "agents" list in
 //     plugins/pstack/.claude-plugin/plugin.json (a list replaces the default
 //     agents/ directory, so it names every agent)

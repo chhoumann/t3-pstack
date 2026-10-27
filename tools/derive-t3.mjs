@@ -55,16 +55,6 @@ export const section = (title) => (lines) => {
   return [start + 1, end];
 };
 
-// The rows under a markdown table header (header line, separator, then every
-// consecutive line starting with rowPrefix).
-export const tableRows = (header, rowPrefix) => (lines) => {
-  const start = lines.indexOf(header);
-  if (start === -1) return null;
-  let end = start + 2;
-  while (end < lines.length && lines[end].startsWith(rowPrefix)) end++;
-  return [start + 2, end];
-};
-
 // The inside of the first ```<lang> fence after the `### N. <title>` step
 // heading. The ordinal is not part of the anchor.
 export const fenceUnder = (title, lang) => (lines) => {
@@ -115,7 +105,6 @@ const padded = (text) => ["", ...text.split("\n"), ""];
 // with `appendHeading` is added as the last H2 when the file lacks it.
 export function t3Regions(models) {
   const bySkill = Map.groupBy(models.roles, (r) => r.skill);
-  const reviewers = entries(models, models.roles.find((r) => r.role === "interrogate reviewers"));
   return [
     ...[...bySkill].map(([skill, roles]) => ({
       file: skillFile(skill),
@@ -124,12 +113,6 @@ export function t3Regions(models) {
       appendHeading: "## Models",
       render: () => padded(modelsSection(models, roles)),
     })),
-    {
-      file: skillFile("interrogate"),
-      name: "reviewer table",
-      locate: tableRows("| Subagent | Default model |", "| Reviewer "),
-      render: () => reviewers.map((m, i) => `| Reviewer ${String.fromCharCode(65 + i)} | ${code(m)} |`),
-    },
     {
       file: skillFile("setup-pstack"),
       name: "sheet block",
