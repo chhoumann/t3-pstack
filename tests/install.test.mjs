@@ -24,7 +24,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { doctorClaude, installClaude, syncScopedRecords } from "../tools/install/claude.mjs";
-import { AppServer } from "../tools/install/codex.mjs";
+import { AppServer, enableInProjectConfig } from "../tools/install/codex.mjs";
 import { parseSource, writeAtomic } from "../tools/install/common.mjs";
 import { discoverHomes } from "../tools/install/homes.mjs";
 import { doctorSheet, moveSheet } from "../tools/install/sheet.mjs";
@@ -54,11 +54,12 @@ const skills = new Map(["how", "why"].map((name) => [name, SKILL(name)]));
 const github = parseSource("chhoumann/t3-pstack", "/home/u");
 const context = { source: github, trusted: new Set([github.key]), version: "2.0.0-rc.3", skills };
 
-// A `claude` that records each call and changes nothing.
-function fakeClaude() {
+// A `claude` that records each call, and the directory it ran from when
+// `where` is set, and changes nothing.
+function fakeClaude({ where = false } = {}) {
   const dir = tmp();
   const bin = join(dir, "claude");
-  writeFileSync(bin, `#!/bin/sh\nprintf '%s\\n' "$*" >> "${dir}/calls"\n`);
+  writeFileSync(bin, `#!/bin/sh\nprintf '%s\\n' "$*${where ? " in $PWD" : ""}" >> "${dir}/calls"\n`);
   chmodSync(bin, 0o755);
   return { bin, calls: () => (existsSync(join(dir, "calls")) ? readFileSync(join(dir, "calls"), "utf8").trim().split("\n") : []) };
 }
@@ -293,6 +294,159 @@ describe("a stale other-scope Claude Code record", () => {
     const steps = installClaude({ harness: "claude", dir, from: ["default"], bin: claude.bin }, context);
     expect(steps[0]).toBe("turned on marketplace auto-update");
     expect(mode(join(dir, "settings.json"))).toBe(0o600);
+  });
+});
+
+describe("a Claude Code project install", () => {
+  const FIX_FOR = (project) => `rerun \`npx -y github:chhoumann/t3-pstack install --${project.scope} ${project.dir}\``;
+
+  // A home that already knows the marketplace, and a project whose record
+  // and settings are there when `installed` is set.
+  function projectHome(scope, { installed = false } = {}) {
+    const { dir, user } = claudeHome({ autoUpdate: true });
+    const project = { scope, dir: tmp() };
+    const settingsPath = join(project.dir, ".claude", scope === "local" ? "settings.local.json" : "settings.json");
+    const records = JSON.parse(readFileSync(join(dir, "plugins/installed_plugins.json"), "utf8"));
+    records.plugins["t3-pstack@t3-pstack"] = installed ? [{ ...user, scope, projectPath: project.dir }] : [];
+    writeJson(join(dir, "plugins/installed_plugins.json"), records);
+    if (installed) {
+      writeJson(settingsPath, {
+        extraKnownMarketplaces: { "t3-pstack": { source: { source: "github", repo: "chhoumann/t3-pstack" }, autoUpdate: true } },
+        enabledPlugins: { "t3-pstack@t3-pstack": true },
+      });
+    }
+    return { home: { harness: "claude", dir, from: ["default"], bin: "claude" }, project, settingsPath, user };
+  }
+
+  test("runs every command at the project's scope, from the project, and turns on auto-update in its settings", () => {
+    const { home, project, settingsPath } = projectHome("project");
+    const settings = JSON.parse(readFileSync(join(home.dir, "settings.json"), "utf8"));
+    delete settings.extraKnownMarketplaces["t3-pstack"].autoUpdate;
+    writeJson(join(home.dir, "settings.json"), settings);
+    const claude = fakeClaude({ where: true });
+    expect(installClaude({ ...home, bin: claude.bin }, { ...context, project })).toEqual([
+      `added the t3-pstack marketplace from chhoumann/t3-pstack to ${settingsPath}`,
+      "installed undefined at project scope",
+      `enabled it in ${settingsPath}`,
+      `turned on marketplace auto-update in ${settingsPath}`,
+    ]);
+    expect(claude.calls()).toEqual([
+      `plugin marketplace add --scope project chhoumann/t3-pstack in ${project.dir}`,
+      `plugin install t3-pstack@t3-pstack --scope project in ${project.dir}`,
+      `plugin enable t3-pstack@t3-pstack --scope project in ${project.dir}`,
+    ]);
+    expect(JSON.parse(readFileSync(settingsPath, "utf8")).extraKnownMarketplaces["t3-pstack"]).toEqual({
+      source: { source: "github", repo: "chhoumann/t3-pstack" },
+      autoUpdate: true,
+    });
+    // The home's own settings and its other records are the global install's.
+    expect(JSON.parse(readFileSync(join(home.dir, "settings.json"), "utf8"))).toEqual(settings);
+  });
+
+  test("doctor reads the project's record and settings, at either scope, and names the project's own fix", () => {
+    for (const scope of ["project", "local"]) {
+      const { home, project, settingsPath, user } = projectHome(scope, { installed: true });
+      expect(doctorClaude(home, { ...context, project })).toEqual([
+        { name: "marketplace", ok: true, detail: "chhoumann/t3-pstack" },
+        { name: "installed", ok: true, detail: user.version },
+        { name: "enabled", ok: true, detail: `yes, in ${settingsPath}` },
+        { name: "marketplace auto-update", ok: true, detail: "true" },
+        { name: "no plain copies of plugin skills", ok: true, detail: "none" },
+      ]);
+      const other = { scope, dir: tmp() };
+      expect(doctorClaude(home, { ...context, project: other }).filter((c) => !c.ok)).toEqual([
+        { name: "installed", ok: false, detail: `not installed at ${scope} scope for ${other.dir}`, fix: FIX_FOR(other) },
+        {
+          name: "enabled",
+          ok: false,
+          detail: `no, in ${join(other.dir, ".claude", scope === "local" ? "settings.local.json" : "settings.json")}`,
+          fix: FIX_FOR(other),
+        },
+      ]);
+    }
+  });
+
+  test("doctor fails a project install that the project's local settings turn off", () => {
+    const { home, project } = projectHome("project", { installed: true });
+    const local = join(project.dir, ".claude/settings.local.json");
+    writeJson(local, { enabledPlugins: { "t3-pstack@t3-pstack": false } });
+    expect(doctorClaude(home, { ...context, project }).filter((c) => !c.ok)).toEqual([
+      { name: "enabled", ok: false, detail: `${local} turns it off`, fix: `remove that entry, or ${FIX_FOR({ ...project, scope: "local" })}` },
+    ]);
+  });
+
+  test("installs nothing beside another source that the project's other settings file declares", () => {
+    for (const [scope, otherFile] of [["project", "settings.local.json"], ["local", "settings.json"]]) {
+      const { home, project } = projectHome(scope);
+      const elsewhere = tmp();
+      writeJson(join(project.dir, ".claude", otherFile), {
+        extraKnownMarketplaces: { "t3-pstack": { source: { source: "directory", path: elsewhere } } },
+      });
+      const claude = fakeClaude();
+      expect(installClaude({ ...home, bin: claude.bin }, { ...context, project })).toEqual([]);
+      expect(claude.calls()).toEqual([]);
+      expect(doctorClaude(home, { ...context, project })[0]).toMatchObject({
+        ok: false,
+        detail: `chhoumann/t3-pstack, ${elsewhere}, which is neither chhoumann/t3-pstack nor --source`,
+      });
+    }
+  });
+
+  test("doctor flags a plain copy of a plugin skill in the project", () => {
+    const { home, project } = projectHome("project", { installed: true });
+    mkdirSync(join(project.dir, ".claude/skills/why"), { recursive: true });
+    writeFileSync(join(project.dir, ".claude/skills/why/SKILL.md"), SKILL("why"));
+    expect(doctorClaude(home, { ...context, project }).filter((c) => !c.ok)).toEqual([
+      {
+        name: "no plain copies of plugin skills",
+        ok: false,
+        detail: join(project.dir, ".claude/skills/why"),
+        fix: "delete these folders; the plugin ships the same skills",
+      },
+    ]);
+  });
+});
+
+describe("a Codex project's config.toml", () => {
+  test("gains the plugin's table, and keeps every other line", () => {
+    const path = join(tmp(), ".codex/config.toml");
+    enableInProjectConfig(path);
+    expect(readFileSync(path, "utf8")).toBe('[plugins."t3-pstack@t3-pstack"]\nenabled = true\n');
+    writeFileSync(path, 'model = "o3"');
+    enableInProjectConfig(path);
+    expect(readFileSync(path, "utf8")).toBe('model = "o3"\n\n[plugins."t3-pstack@t3-pstack"]\nenabled = true\n');
+  });
+
+  test("leaves a file that already names the plugin, or has a plugins value, to the user", () => {
+    const path = join(tmp(), "config.toml");
+    for (const text of ['[plugins."t3-pstack@t3-pstack"]\n"enabled" = false\n', 'notes = """\n[plugins."t3-pstack@t3-pstack"]\n"""\n']) {
+      writeFileSync(path, text);
+      expect(() => enableInProjectConfig(path)).toThrow(`${path} already has a plugins entry`);
+      expect(readFileSync(path, "utf8")).toBe(text);
+    }
+    // An inline `plugins = {}` cannot take a table after it.
+    writeFileSync(path, "plugins = {}\n");
+    expect(() => enableInProjectConfig(path, { plugins: {} })).toThrow(`${path} already has a plugins entry`);
+    expect(readFileSync(path, "utf8")).toBe("plugins = {}\n");
+  });
+});
+
+describe("--project and --local", () => {
+  const cli = (...args) =>
+    spawnSync(process.execPath, [join(repoRoot, "tools/install.mjs"), "doctor", ...args], { env: { HOME: tmp(), PATH: tmp() }, encoding: "utf8" });
+
+  test("name one existing directory between them", () => {
+    const dir = tmp();
+    expect(cli("--project", dir, "--local", dir)).toMatchObject({ status: 2, stderr: "t3-pstack: --project and --local name one project between them\n" });
+    expect(cli("--local", join(dir, "missing"))).toMatchObject({ status: 2, stderr: `t3-pstack: --local ${join(dir, "missing")}: not a directory\n` });
+  });
+
+  test("report the project by its real path and scope", () => {
+    const dir = tmp();
+    symlinkSync(dir, join(dir, "..", `${dir.split("/").pop()}-link`));
+    scratch.push(`${dir}-link`);
+    const r = cli("--local", `${dir}-link`, "--json");
+    expect(JSON.parse(r.stdout).project).toEqual({ scope: "local", dir });
   });
 });
 
