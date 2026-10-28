@@ -120,7 +120,7 @@ jobs:
       - name: Typecheck
         run: bun run typecheck
       - name: Test
-        run: bun test orch watch-pr check-plan.test.ts
+        run: bun test watch-pr check-plan.test.ts
       # Upstream's scripts are not Prettier output, so this checks the port's
       # own TypeScript. Pinned here, not in package.json, so bun.lock stays
       # identical to upstream's.

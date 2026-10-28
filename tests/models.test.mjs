@@ -1,5 +1,5 @@
-// models.json is the T3 model policy every stamped Models section,
-// interrogate's reviewer table, and setup-pstack's sheet block derive from.
+// models.json is the T3 model policy every stamped Models section and
+// setup-pstack's sheet block derive from.
 // parseModels checks its shape when the generator loads it, and a role label
 // is the runtime join key between the sheet the user writes and the prose that
 // tells the agent which role to look up.

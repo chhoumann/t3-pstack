@@ -20,7 +20,7 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { applyRegions, deriveT3, fenceUnder, section, tableRows, t3Regions } from "../tools/derive-t3.mjs";
+import { applyRegions, deriveT3, fenceUnder, section, t3Regions } from "../tools/derive-t3.mjs";
 import {
   apply,
   assertChangesHeading,
@@ -64,12 +64,6 @@ describe("locators", () => {
     expect(spanned(fenceUnder("Write", "markdown"), doc)).toBeNull();
     expect(spanned(fenceUnder("Write the sheet", "markdown"), unclosed)).toBeNull();
   });
-
-  test("tableRows spans the consecutive rows with the prefix after the separator", () => {
-    const doc = lines("| Subagent | Default model |\n| --- | --- |\n| Reviewer A | x |\n| Reviewer B | y |\n\ntext");
-    expect(spanned(tableRows("| Subagent | Default model |", "| Reviewer "), doc)).toEqual(["| Reviewer A | x |", "| Reviewer B | y |"]);
-    expect(spanned(tableRows("| Other |", "|"), doc)).toBeNull();
-  });
 });
 
 describe("regions", () => {
@@ -101,14 +95,6 @@ describe("regions", () => {
       "plugins/pstack/skills/setup-pstack/SKILL.md: no anchor for the sheet block to stamp",
     );
     expect(applyRegions("plugins/pstack/skills/setup-pstack/SKILL.md", text, models)).toBe(text);
-  });
-
-  test("interrogate's reviewer table gets one row per panel entry", () => {
-    const text = "| Subagent | Default model |\n| --- | --- |\n| Reviewer A | `old` |\n";
-    const stamped = applyRegions("plugins/pstack/skills/interrogate/SKILL.md", text, models);
-    expect(stamped).toContain(
-      "| Reviewer A | `claudeAgent/claude-opus-5-5 effort=xhigh` |\n| Reviewer B | `codex/gpt-6.1-sol reasoningEffort=xhigh` |\n| Reviewer C | `grok/grok-4.7 reasoningEffort=xhigh` |",
-    );
   });
 
   test("applyRegions leaves a file no region names untouched", () => {

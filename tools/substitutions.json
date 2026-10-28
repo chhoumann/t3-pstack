@@ -171,8 +171,8 @@
     {
       "files": "^skills/poteto-mode/SKILL\\.md$",
       "pattern": "- Contested design → the **interrogate** skill (multi-model adversarial) before shipping.",
-      "replacement": "- Contested design → the **interrogate** skill (multi-model adversarial) before shipping.\n- A Bug fix, Feature, or Refactoring diff → the **interrogate** skill with the `interrogate reviewers` panel before Opening a PR. Skip it only for a mechanical change, such as a rename or a dependency bump, and say so in the reply. Only findings under interrogate's Act on block, `warning` correctness findings included. A nit, or an edge case that cannot occur in practice, never blocks: batch accepted nits into one final fix run or drop them, and give each dismissal its reason. Round 1 reviews the whole change, and each later round reviews only the fix diff. After every fix round, a `feature, refactoring` delegate runs the real artifact and reports `pass`, `fail`, or `could not run` with its evidence. `fail` blocks like an Act on finding. `could not run` is not a pass and starts no fix, so report it. After three fix rounds, stop and report the open findings, what kind of failure they suggest, and a recommendation.",
-      "rationale": "Playbooks: Bug fix, Feature, Refactoring and Review loop (t3-pstack 1.0.1 and 1.0.6: a cross-family review gate with a severity gate and a three-round cap)"
+      "replacement": "- Contested design → the **interrogate** skill (multi-model adversarial) before shipping.\n- A Bug fix, Feature, or Refactoring diff → the **interrogate** skill with the `interrogate reviewers` panel before Opening a PR. Skip it only for a mechanical change, such as a rename or a dependency bump, and say so in the reply. Only interrogate's verified findings block the PR. A nit, or an edge case that cannot occur in practice, never blocks: batch accepted nits into one final fix run or drop them, and give each dismissal its reason. Round 1 reviews the whole change, and each later round reviews only the fix diff. After every fix round, a `feature, refactoring` delegate runs the real artifact and reports `pass`, `fail`, or `could not run` with its evidence. `fail` blocks like a verified finding. `could not run` is not a pass and starts no fix, so report it. After three fix rounds, stop and report the open findings, what kind of failure they suggest, and a recommendation.",
+      "rationale": "Playbooks: Bug fix, Feature, Refactoring and Review loop (t3-pstack 1.0.1 and 1.0.6: a cross-family review gate with a three-round cap). Since pstack 0.15.35 interrogate keeps only findings a rerun confirms, so those verified findings are the gate, in place of its retired Act on bucket and warning severity"
     },
     {
       "pattern": "Agent-facing prose also follows the **create-skill** skill (Cursor's built-in for authoring SKILL.md files).",
@@ -205,9 +205,9 @@
       "files": "^skills/poteto-mode/SKILL\\.md$"
     },
     {
-      "pattern": "**Defaults for every `Task` call.** `run_in_background: true`, agent mode (readonly strips MCP), file pointers not inlined context, explicit model per role",
-      "replacement": "**Defaults for every `delegate_task` call.** `mode: \"async\"`, full tool access (a read-only child gets \"inspect only, change no file\" in its brief), file pointers not inlined context, an explicit `target` per role",
-      "rationale": "Tool actions: Dispatch; Subagent policy (readonly)",
+      "pattern": "**Defaults for every `Task` call.** `run_in_background: true` (a steer or resume of a running agent too, because a foreground call holds your turn while other reports wait), agent mode (readonly strips MCP), file pointers not inlined context, explicit model per role",
+      "replacement": "**Defaults for every `delegate_task` call.** `mode: \"async\"` (a steer or resume of a running child, a `t3_thread_send`, gets no `t3_thread_wait` either, because a waiting call holds your turn while other reports wait), full tool access (a read-only child gets \"inspect only, change no file\" in its brief), file pointers not inlined context, an explicit `target` per role",
+      "rationale": "Tool actions: Dispatch, Continue a subagent; Subagent policy (readonly). On T3 a steer or resume is a t3_thread_send, which returns at once, so only a t3_thread_wait after it would hold the turn",
       "files": "^skills/poteto-mode/SKILL\\.md$"
     },
     {
@@ -247,6 +247,12 @@
       "rationale": "#613 per-job effort: a T3 entry carries its reasoning and speed as options, not as slug suffixes (The sheet)"
     },
     {
+      "files": "^skills/poteto-mode/SKILL\\.md$",
+      "pattern": "A slug counts as rejected once a Task error says that the model is not valid, or leaves the slug out of its list of valid slugs. Never pass a rejected slug, and skip any fallback whose slug is already rejected. When the calling skill has no fallback, use the closest valid slug of the role's family from the error's list of valid slugs, or omit `model` so the subagent runs on the parent model when the list has none. When the calling skill's fallback runs out of slugs without saying what to do next, omit `model` too.",
+      "replacement": "An entry counts as rejected once `delegate_task` fails on it with `model_unavailable` or `provider_unavailable`, or rejects its options. Never pass a rejected entry, and skip any fallback whose entry is already rejected. When the calling skill has no fallback, use the closest target of the role's family that `orchestrator_capabilities` lists, or omit `target` so the subagent runs on the parent model when it lists none. When the calling skill's fallback runs out of entries without saying what to do next, omit `target` too.",
+      "rationale": "Subagent policy (rejected target). T3's delegate_task fails with model_unavailable on a model its provider does not advertise, provider_unavailable on a disabled or unregistered provider instance, and invalid_request naming the options it rejects. None of these lists valid models, which orchestrator_capabilities does"
+    },
+    {
       "regex": "Defaults `(?:claude|gpt|grok|gemini|composer)-[^`]+` for code, `(?:claude|gpt|grok|gemini|composer)-[^`]+` for prose and judgment",
       "replacement": "Role defaults in [Models](#models)",
       "rationale": "defaults come from the stamped Models section (Model names)",
@@ -272,7 +278,7 @@
     },
     {
       "pattern": "Interrupt-chained resumes silently drop directives, so fire a fresh subagent with consolidated scope rather than trusting a \"done\" summary.",
-      "replacement": "Interrupt-chained resumes silently drop directives, so fire a fresh subagent with consolidated scope rather than trusting a \"done\" summary.\n\n**Dispatch on T3.** Every subagent is a `delegate_task` call from the chat that runs the playbook, same model family included, so every child shows up in T3. Give each call its own `clientRequestId`, stable across retries of that call, and keep each returned `taskId`. A child's completion wakes this thread, so end the turn instead of polling, and call `task_status` only when a result is needed mid-turn. `task_cancel` stops a child, and `task_status` confirms it stopped. A child gets only its brief, never your context, so pass absolute paths. `<plugin root>` is the absolute path of the directory that holds this plugin's `skills/` and `agents/`. A persona (`poteto-agent`, `comment-sicko`, `thermo-nuclear-review-subagent`, `thermo-nuclear-code-quality-review-subagent`) is a brief that opens with \"Read `<plugin root>/agents/<name>.md` in full and act as it says\", and a `poteto-agent` brief also names this file's absolute path.\n\nA child starts in your checkout. One that writes gets its own worktree, created with `git worktree add` from `HEAD` so it builds on your branch's commits. The brief names that absolute path as the only place it writes, and tells it to run every command there (`workdir` on Codex) and to edit by absolute path. Record your own `git status --porcelain` before you dispatch, check after the result that it is unchanged, then remove the worktree and its branch. A step a playbook says to delegate goes to `delegate_task` on that role's sheet entry, not into your own tool calls, unless you state a reason such as a step too small to brief. A research delegate no role names runs on the `how explorer` entry. A model's family is the first segment of its ID's last `/` part, such as `claude`, `gpt`, or `grok`, whatever provider instance serves it, and your own family is the one in `orchestrator_capabilities`' `inheritedModel`. A rejected target runs on another target of the same family from `orchestrator_capabilities`, and you say so. A required review with no reviewer from another family stays `BLOCKED: independent review`.\n\nEnd every reply that ran a playbook with a dispatch ledger: one line per delegated step, naming the role and the `providerInstanceId/model` it ran on, or `in-thread: <reason>`.",
+      "replacement": "Interrupt-chained resumes silently drop directives, so fire a fresh subagent with consolidated scope rather than trusting a \"done\" summary.\n\n**Dispatch on T3.** Every subagent is a `delegate_task` call from the chat that runs the playbook, same model family included, so every child shows up in T3. Give each call its own `clientRequestId`, stable across retries of that call, and keep each returned `taskId`. A child's completion wakes this thread, so end the turn instead of polling, and call `task_status` only when a result is needed mid-turn. `task_cancel` stops a child, and `task_status` confirms it stopped. A child gets only its brief, never your context, so pass absolute paths. `<plugin root>` is the absolute path of the directory that holds this plugin's `skills/` and `agents/`. A persona (`poteto-agent`, `comment-sicko`, `thermo-nuclear-review-subagent`, `thermo-nuclear-code-quality-review-subagent`) is a brief that opens with \"Read `<plugin root>/agents/<name>.md` in full and act as it says\", and a `poteto-agent` brief also names this file's absolute path.\n\nA child starts in your checkout. One that writes gets its own worktree, created with `git worktree add` from `HEAD` so it builds on your branch's commits. The brief names that absolute path as the only place it writes, and tells it to run every command there (`workdir` on Codex) and to edit by absolute path. Record your own `git status --porcelain` before you dispatch, check after the result that it is unchanged, then remove the worktree and its branch. A step a playbook says to delegate goes to `delegate_task` on that role's sheet entry, not into your own tool calls, unless you state a reason such as a step too small to brief. A research delegate no role names runs on the `how explorer` entry. A model's family is the first segment of its ID's last `/` part, such as `claude`, `gpt`, or `grok`, whatever provider instance serves it, and your own family is the one in `orchestrator_capabilities`' `inheritedModel`. A rejected target runs on another target of the same family from `orchestrator_capabilities`, and you say so. `orchestrator_capabilities` lists a short set of models per provider, and its `search` finds the others. A required review with no reviewer from another family stays `BLOCKED: independent review`.\n\nEnd every reply that ran a playbook with a dispatch ledger: one line per delegated step, naming the role and the `providerInstanceId/model` it ran on, or `in-thread: <reason>`.",
       "rationale": "inserts the T3 dispatch policy at the end of the Subagents section (Tool actions; Subagent policy)",
       "files": "^skills/poteto-mode/SKILL\\.md$"
     },
@@ -430,24 +436,9 @@
       "rationale": "harness skill dirs; Tool actions: Dispatch"
     },
     {
-      "pattern": "Launch all reviewers in a single message with the Task tool,",
-      "replacement": "Launch all reviewers in a single response with `delegate_task`,",
-      "rationale": "Per-skill notes: interrogate"
-    },
-    {
-      "pattern": "Each reviewer gets `subagent_type: generalPurpose`, `readonly: true`, and `model` set to its configured entry, or its table default when there is no configured line. Omit `model` for an `auto` or `inherit-parent` entry, so that reviewer runs on the parent model.",
-      "replacement": "Each reviewer gets `role: \"review\"`, a brief that says to inspect only and change no file, and `target` set from its configured entry, or from its table default when there is no configured line. Omit `target` for an `auto` or `inherit-parent` entry, so that reviewer runs on the parent model.",
-      "rationale": "Per-skill notes: interrogate"
-    },
-    {
-      "pattern": "If the Task tool rejects a configured entry, run that reviewer on its family's table default and say so.",
-      "replacement": "If `delegate_task` rejects a configured entry, run that reviewer on another target of the same family from `orchestrator_capabilities` and say so.",
-      "rationale": "Subagent policy (rejected target)"
-    },
-    {
-      "pattern": "If it rejects a table default, spawn with the closest equivalent from the valid slugs in its error message (prefer the same family and reasoning tier),",
-      "replacement": "If it rejects a table default, spawn on the closest target of the same family from `orchestrator_capabilities` (prefer the same reasoning tier),",
-      "rationale": "Subagent policy (rejected target)"
+      "pattern": "Spawn each adversary as `generalPurpose`.",
+      "replacement": "Spawn each adversary as a `delegate_task` child with `role: \"review\"` and no persona brief.",
+      "rationale": "Per-skill notes: interrogate. Cursor's generalPurpose is the default agent with every tool, which on T3 is a delegate_task child whose brief names no persona. Adversaries run repros in their own worktrees, so the brief does not make them read-only"
     },
     {
       "pattern": "If the Task tool rejects a configured entry, run that seat on its family's default and say so.",
@@ -460,20 +451,37 @@
       "rationale": "The sheet"
     },
     {
-      "pattern": "If it rejects a default, use the closest valid slug of the same family from its error message.",
-      "replacement": "If it rejects a default, use another target of the same family from `orchestrator_capabilities`.",
-      "rationale": "Subagent policy (rejected target)"
+      "pattern": "If the family has no default, or the Task tool rejects that default, use the closest valid slug of the same family from its error message, or drop the seat and say so when there is none.",
+      "replacement": "If the family has no other target, or `delegate_task` rejects that one too, drop the seat and say so.",
+      "rationale": "Subagent policy (rejected target). The step before already moves a rejected seat to another target of its family from orchestrator_capabilities, which stands in for both of upstream's slug fallbacks"
     },
     {
-      "pattern": "Spawn one readonly judge subagent on that model.",
-      "replacement": "Spawn one judge subagent on that model, briefed to inspect only and change no file.",
+      "pattern": "or omit `model` so it runs on the parent model when none remain,",
+      "replacement": "or omit `target` so it runs on the parent model when none remain,",
+      "rationale": "The sheet"
+    },
+    {
+      "pattern": "Spawn one readonly judge subagent.",
+      "replacement": "Spawn one judge subagent, briefed to inspect only and change no file.",
       "rationale": "Subagent policy (readonly)"
     },
     {
       "files": "^skills/arena/SKILL\\.md$",
-      "pattern": "Prefer a different model family from the parent's.",
-      "replacement": "Pick an entry whose model ran no candidate, so no model scores its own work, and among those prefer a different model family from the parent's. If every pool entry ran a candidate, say so in the reply and judge on the entry that ran the fewest.",
-      "rationale": "Per-skill notes: arena (t3-pstack 1.0.2: the cross-judge never scores its own candidate)"
+      "regex": "With the default pool, a Claude parent gets `(?:claude|gpt|grok|gemini|composer)-[^`]+`\\. A parent from any other family gets `(?:claude|gpt|grok|gemini|composer)-[^`]+` first\\.",
+      "replacement": "Among the entries from another family, try first those whose model ran fewer candidates, so no model scores its own work when another can judge. Pool order decides among entries that ran as many, and the reply says when the judge ran a candidate. With the default runners and pool in [Models](#models), a Claude parent skips the Claude entry and gets the next one, and a parent from any other family gets the Claude entry first.",
+      "rationale": "Model names; Per-skill notes: arena (t3-pstack 1.0.2: the cross-judge does not score its own candidate when another entry can judge)"
+    },
+    {
+      "files": "^skills/arena/SKILL\\.md$",
+      "pattern": "use a valid slug of the same model at the closest level or speed from the error message, or move to the next entry when there is none.",
+      "replacement": "use the same model at the closest reasoning level or speed that `orchestrator_capabilities` lists for it, under any provider instance, or move to the next entry when there is none.",
+      "rationale": "Subagent policy (rejected target). A T3 rejection lists no valid models, and orchestrator_capabilities lists each model's options per provider instance"
+    },
+    {
+      "files": "^skills/arena/SKILL\\.md$",
+      "pattern": "If you do not know the parent's model, try the pool's real slugs in pool order",
+      "replacement": "If `orchestrator_capabilities` names no `inheritedModel`, try the pool's targets in pool order",
+      "rationale": "Model names; Subagent policy (the parent's model is orchestrator_capabilities' inheritedModel, so the family check is skipped only when that is missing)"
     },
     {
       "pattern": "For `auto` or `inherit-parent`, omit `model` so the workers run on the parent model.",
@@ -529,6 +537,11 @@
       "pattern": "Use the `AskQuestion` tool (structured multi-choice) rather than asking the user to type from scratch.",
       "replacement": "Ask a structured multiple-choice question (`AskUserQuestion` on Claude Code, numbered options in plain text where the harness has no question tool) rather than asking the user to type from scratch.",
       "rationale": "harness-specific question tool"
+    },
+    {
+      "pattern": "Prefer AskQuestion over free text.",
+      "replacement": "Prefer a structured multiple-choice question (`AskUserQuestion` on Claude Code, numbered options in plain text elsewhere) over free text.",
+      "rationale": "Cursor's question tool. setup-pstack is a fork whose text already asks this way, so the rule lets a conflict on its (a) or (c) paragraph be written for a person to resolve"
     },
     {
       "pattern": "For a new mode, use `.cursor/skills/<handle>/<handle>-mode/SKILL.md` when the repo has an established personal category for that handle. Otherwise default to `.cursor/skills/<handle>-mode/SKILL.md` in the project (or `~/.cursor/skills/<handle>-mode/` if the user prefers a personal skill).",
@@ -616,10 +629,28 @@
       "rationale": "an installed plugin has no trunk; the playbook's own file is on disk"
     },
     {
+      "files": "^skills/poteto-mode/playbooks/orchestrate\\.md$",
+      "pattern": "Keep the program's state in the Project tracker (`notes.md`) and the Project store. Watch each PR with PR and CI event subscriptions when your harness has them.",
+      "replacement": "Keep the program's state in `${XDG_STATE_HOME:-~/.local/state}/t3-pstack/orchestrate/<project-slug>/`, with the tracker in its `notes.md`. Watch each PR with `watch_pull_request` when this thread has it. It wakes this thread on failed checks, passed required checks, new comments or reviews, and conflicts.",
+      "rationale": "T3 has no Cursor Project tracker or store, so the program's state lives in the port's store directory on local disk, the one Autopilot-full's trail uses. T3's PR and CI event subscription is watch_pull_request, and the wakes it lists are the ones its tool description names. T3 gives a delegated child no watch_pull_request, so a sub-coordinator has none and the condition stays"
+    },
+    {
+      "files": "^skills/poteto-mode/playbooks/orchestrate\\.md$",
+      "pattern": "Run workers on a new cloud VM (`environment: \"cloud\"`) unless the work needs this machine: a `control-ui` or `control-cli` runtime check (from `cursor-team-kit`), local transcripts, a simulator, or auth that exists only here.",
+      "replacement": "Every worker runs on this machine, and one that writes gets its own git worktree, named by absolute path in its kickoff as the only place it writes.",
+      "rationale": "no cloud VMs on T3, so every delegate_task child runs locally and the exceptions Lauren lists need nothing; a writing child gets its own worktree per poteto-mode's Dispatch on T3"
+    },
+    {
+      "files": "^skills/poteto-mode/playbooks/orchestrate\\.md$",
+      "pattern": "- **Fork when new work needs a worker's built state,** such as its checkout, uncommitted changes, or a running process. Message a worker only for a follow-up on the same work.",
+      "replacement": "- **Reuse a worker's worktree when new work needs its built state,** such as its checkout, uncommitted changes, or a running process. Once that worker is done, start a fresh one there instead of removing the worktree. Message a worker, with `t3_thread_send` to its `childThreadId`, only for a follow-up on the same work.",
+      "rationale": "T3 cannot fork a child. The built state lives in the worker's worktree on this machine, so a fresh delegate_task child there inherits it, and waiting until the first worker is done keeps one writer per worktree. A message to a child is t3_thread_send, which starts a new turn on an idle child as Lauren's next sentence says. poteto-mode's Dispatch on T3 removes a child's worktree after its result, so the sentence says to keep this one"
+    },
+    {
       "files": "^skills/poteto-mode/playbooks/",
-      "pattern": "re-reads both playbooks from trunk",
-      "replacement": "re-reads both playbooks from disk",
-      "rationale": "an installed plugin has no trunk; the playbooks' own files are on disk"
+      "pattern": "Every loop tick prompt names this file",
+      "replacement": "Every `schedule_task` prompt names this file",
+      "rationale": "Cursor's /loop: on T3 each audit tick runs from a schedule_task prompt, per Autopilot-full step 6"
     },
     {
       "pattern": "This playbook replaces Cursor's built-in babysit skill for these requests, so do not route there even though its description matches the same words. ",
@@ -709,60 +740,6 @@
       "pattern": "Each live lane runs on its own cloud VM at the PR head. Drive through `control-ui` or `control-cli` from `cursor-team-kit`.",
       "replacement": "Each live lane runs in its own worktree at the PR head. Drive through the control skill above.",
       "rationale": "no cloud VMs on T3; UI evidence",
-      "files": "^skills/poteto-mode/playbooks/"
-    },
-    {
-      "pattern": "Agents are spawned, resumed, and drained only through the Task tool.",
-      "replacement": "Agents are spawned, resumed, and drained only through `delegate_task`, `t3_thread_send` to a child's `childThreadId`, and `task_status`.",
-      "rationale": "Tool actions",
-      "files": "^skills/poteto-mode/playbooks/"
-    },
-    {
-      "pattern": "(nesting works to depth 3, and a nested spawn has the full Task schema including `environment`)",
-      "replacement": "(a `delegate_task` child can delegate its own)",
-      "rationale": "Tool actions: Dispatch",
-      "files": "^skills/poteto-mode/playbooks/"
-    },
-    {
-      "pattern": "- **Worker / verifier.** Always `environment: \"cloud\"` unless the task needs this machine: `control-ui` or `control-cli` runtime verification (from `cursor-team-kit`). Reading local transcripts under `agent-transcripts/`. Simulators and local IDE state. Auth that exists only here. Cloud agents cannot read the local store, so their briefs inline what they need or point at repo paths.",
-      "replacement": "- **Worker / verifier.** Always a `delegate_task` child in its own git worktree, named by absolute path in its brief as the only place it writes. Every child runs on this machine, so it can drive the real surface, read T3 threads, and use local auth. A child starts without your context, so its brief inlines what it needs or points at repo paths.",
-      "rationale": "Playbooks: Orchestrate; Subagent policy (worktree)",
-      "files": "^skills/poteto-mode/playbooks/"
-    },
-    {
-      "pattern": "in the current agent's store (path in the system prompt).",
-      "replacement": "in `${XDG_STATE_HOME:-~/.local/state}/t3-pstack/` (T3 names no agent store).",
-      "rationale": "no Cursor agent store on T3",
-      "files": "^skills/poteto-mode/playbooks/"
-    },
-    {
-      "pattern": "its spawn budget with the cloud default and the local exception list,",
-      "replacement": "its spawn budget,",
-      "rationale": "no cloud default on T3",
-      "files": "^skills/poteto-mode/playbooks/"
-    },
-    {
-      "files": "^skills/poteto-mode/playbooks/",
-      "pattern": "Chain rebases run in cloud. A local rebase at this scale takes the laptop down.",
-      "replacement": "Chain rebases run one at a time, each in its own worktree, because a rebase at this scale can take the laptop down.",
-      "rationale": "no cloud on T3; every child runs on this machine"
-    },
-    {
-      "pattern": "Work that exists only on one VM when that VM dies was never done.",
-      "replacement": "Work that exists only in one worktree when that worktree is removed was never done.",
-      "rationale": "no cloud VMs on T3",
-      "files": "^skills/poteto-mode/playbooks/"
-    },
-    {
-      "pattern": "the cloud agent's status in the Cursor dashboard.",
-      "replacement": "each child's `task_status`.",
-      "rationale": "Tool actions: List subagents",
-      "files": "^skills/poteto-mode/playbooks/"
-    },
-    {
-      "pattern": "- After a Cursor restart: local agents are dead, cloud work is not. Re-read the standing orders and `units.tsv`, recompute the frontier, reattach cloud work by PR and branch rather than agent id,",
-      "replacement": "- After a T3 restart: in-flight turns stop, while T3 threads, their worktrees, and pushed branches survive. Re-read the standing orders and `units.tsv`, recompute the frontier, reattach work by PR and branch rather than task id,",
-      "rationale": "no cloud agents on T3",
       "files": "^skills/poteto-mode/playbooks/"
     },
     {
@@ -867,12 +844,6 @@
     {
       "regex": "choose from `(?:claude|gpt|grok|gemini|composer)-[^`]+`(?:(?:,| and|, and) `(?:claude|gpt|grok|gemini|composer)-[^`]+`)*\\.",
       "replacement": "choose from the `arena cross-judge pool` defaults in [Models](#models).",
-      "rationale": "Model names",
-      "files": "^skills/arena/SKILL\\.md$"
-    },
-    {
-      "regex": "With no family match, use `(?:claude|gpt|grok|gemini|composer)-[^`]+`\\.",
-      "replacement": "With no family match, use the first `arena runners` default in [Models](#models).",
       "rationale": "Model names",
       "files": "^skills/arena/SKILL\\.md$"
     },
@@ -1060,6 +1031,10 @@
     {
       "regex": "(?:^|[\\s`(])/visualize\\b",
       "hint": "Cursor's canvas command; T3 renders a page inline with html_render"
+    },
+    {
+      "regex": "\\bProject (?:tracker|store)\\b",
+      "hint": "Cursor Projects; T3 keeps program state under ${XDG_STATE_HOME:-~/.local/state}/t3-pstack/"
     }
   ]
 }

@@ -133,8 +133,13 @@ describe("applySubstitutions", () => {
     ],
     [
       "skills/interrogate/SKILL.md",
-      "Families go by prefix: `claude-*`, and `grok-*` with `cursor-grok-*` and `composer-*`. A refused `composer-*` entry runs on Reviewer B's default.",
-      "A model's family is the first segment of its ID's last `/` part, such as `claude`, `gpt`, or `grok`, whatever provider instance serves it.",
+      "Spawn each adversary as `generalPurpose`.",
+      'Spawn each adversary as a `delegate_task` child with `role: "review"` and no persona brief.',
+    ],
+    [
+      "skills/poteto-mode/SKILL.md",
+      "If the Task tool rejects that too, continue with the calling skill's fallback. A slug counts as rejected once a Task error says that the model is not valid, or leaves the slug out of its list of valid slugs. Never pass a rejected slug, and skip any fallback whose slug is already rejected. When the calling skill has no fallback, use the closest valid slug of the role's family from the error's list of valid slugs, or omit `model` so the subagent runs on the parent model when the list has none. When the calling skill's fallback runs out of slugs without saying what to do next, omit `model` too. Say so in both cases.",
+      "If `delegate_task` rejects that too, continue with the calling skill's fallback. An entry counts as rejected once `delegate_task` fails on it with `model_unavailable` or `provider_unavailable`, or rejects its options. Never pass a rejected entry, and skip any fallback whose entry is already rejected. When the calling skill has no fallback, use the closest target of the role's family that `orchestrator_capabilities` lists, or omit `target` so the subagent runs on the parent model when it lists none. When the calling skill's fallback runs out of entries without saying what to do next, omit `target` too. Say so in both cases.",
     ],
     [
       "skills/poteto-mode/SKILL.md",
@@ -148,8 +153,8 @@ describe("applySubstitutions", () => {
     ],
     [
       "skills/poteto-mode/playbooks/autopilot-stack.md",
-      "Each tick re-reads both playbooks from trunk, and this one wins where they differ.",
-      "Each tick re-reads both playbooks from disk, and this one wins where they differ.",
+      "Every loop tick prompt names this file, so each tick sees the no-merge rule.",
+      "Every `schedule_task` prompt names this file, so each tick sees the no-merge rule.",
     ],
     [
       "skills/ketchup/SKILL.md",
@@ -165,8 +170,8 @@ describe("applySubstitutions", () => {
   // The T3 behavior the port adds on an upstream anchor: each must survive.
   test.each([
     ["skills/poteto-mode/SKILL.md", "Interrupt-chained resumes silently drop directives, so fire a fresh subagent with consolidated scope rather than trusting a \"done\" summary.", ["**Dispatch on T3.**", "dispatch ledger", "`BLOCKED: independent review`", "`clientRequestId`"]],
-    ["skills/poteto-mode/SKILL.md", "- Contested design → the **interrogate** skill (multi-model adversarial) before shipping.", ["before Opening a PR", "After three fix rounds, stop"]],
-    ["skills/arena/SKILL.md", "Prefer a different model family from the parent's.", ["no model scores its own work"]],
+    ["skills/poteto-mode/SKILL.md", "- Contested design → the **interrogate** skill (multi-model adversarial) before shipping.", ["before Opening a PR", "verified findings block the PR", "After three fix rounds, stop"]],
+    ["skills/arena/SKILL.md", "With the default pool, a Claude parent gets `grok-4.7-xhigh-fast`. A parent from any other family gets `claude-opus-5-5-xhigh` first.", ["no model scores its own work"]],
     ["skills/poteto-mode/playbooks/babysit.md", "Run `drive` and `background` under `/loop` in dynamic mode.", ["--timeout 540", "watch_pull_request", "--settle"]],
     ["skills/poteto-mode/playbooks/autopilot-full.md", "Each owner is a Cursor cloud agent that builds, opens its PR", ["t3_thread_launch", "t3_thread_send"]],
     ["skills/no-comments/SKILL.md", '1. Spawn `Task` with `subagent_type: "comment-sicko"`. Pass the scope.', ["<plugin root>/agents/comment-sicko.md", "no worktree"]],
