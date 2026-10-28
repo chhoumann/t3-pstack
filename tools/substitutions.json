@@ -632,7 +632,7 @@
       "files": "^skills/poteto-mode/playbooks/orchestrate\\.md$",
       "pattern": "Keep the program's state in the Project tracker (`notes.md`) and the Project store. Watch each PR with PR and CI event subscriptions when your harness has them.",
       "replacement": "Keep the program's state in `${XDG_STATE_HOME:-~/.local/state}/t3-pstack/orchestrate/<project-slug>/`, with the tracker in its `notes.md`. Watch each PR with `watch_pull_request` when this thread has it. It wakes this thread on failed checks, passed required checks, new comments or reviews, and conflicts.",
-      "rationale": "T3 has no Cursor Project tracker or store, so the program's state lives in the port's store directory on local disk, the one Autopilot-full and the show-me-your-work trail use. T3's PR and CI event subscription is watch_pull_request, and the wakes it lists are the ones its tool description names. T3 gives a delegated child no watch_pull_request, so a sub-coordinator has none and the condition stays"
+      "rationale": "T3 has no Cursor Project tracker or store, so the program's state lives in the port's store directory on local disk, the one Autopilot-full's trail uses. T3's PR and CI event subscription is watch_pull_request, and the wakes it lists are the ones its tool description names. T3 gives a delegated child no watch_pull_request, so a sub-coordinator has none and the condition stays"
     },
     {
       "files": "^skills/poteto-mode/playbooks/orchestrate\\.md$",
@@ -643,8 +643,8 @@
     {
       "files": "^skills/poteto-mode/playbooks/orchestrate\\.md$",
       "pattern": "- **Fork when new work needs a worker's built state,** such as its checkout, uncommitted changes, or a running process. Message a worker only for a follow-up on the same work.",
-      "replacement": "- **Reuse a worker's worktree when new work needs its built state,** such as its checkout, uncommitted changes, or a running process. Once that worker is done, start a fresh one there. Message a worker, with `t3_thread_send` to its `childThreadId`, only for a follow-up on the same work.",
-      "rationale": "T3 cannot fork a child. The built state lives in the worker's worktree on this machine, so a fresh delegate_task child there inherits it, and waiting until the first worker is done keeps one writer per worktree. A message to a child is t3_thread_send, which starts a new turn on an idle child as Lauren's next sentence says"
+      "replacement": "- **Reuse a worker's worktree when new work needs its built state,** such as its checkout, uncommitted changes, or a running process. Once that worker is done, start a fresh one there instead of removing the worktree. Message a worker, with `t3_thread_send` to its `childThreadId`, only for a follow-up on the same work.",
+      "rationale": "T3 cannot fork a child. The built state lives in the worker's worktree on this machine, so a fresh delegate_task child there inherits it, and waiting until the first worker is done keeps one writer per worktree. A message to a child is t3_thread_send, which starts a new turn on an idle child as Lauren's next sentence says. poteto-mode's Dispatch on T3 removes a child's worktree after its result, so the sentence says to keep this one"
     },
     {
       "files": "^skills/poteto-mode/playbooks/",
