@@ -106,6 +106,32 @@ describe("checkSheet against a catalog", () => {
     ]);
   });
 
+  test("a catalog that lists each option's values as a plain array, as orchestrator_capabilities returns, checks values", () => {
+    // A copy of a live orchestrator_capabilities result, trimmed to four
+    // providers. Its grok instance is disabled, so only the tier defaults that
+    // name grok fail; the Claude and Codex defaults at xhigh pass.
+    const values = JSON.parse(readFileSync(join(root, "tests/fixtures/t3-catalog-values.json"), "utf8"));
+    const problems = (lines) => check(lines.join("\n"), values);
+    const onlyGrokDefaults = (p) => p.includes("(no line, tier default): grok/grok-4.7: \"grok\" cannot run child tasks");
+    const valid = [
+      "bug-fix: claudeAgent/claude-opus-5-5 effort=high fastMode=true",
+      "feature, refactoring: codex/gpt-6.1-sol reasoningEffort=xhigh serviceTier=priority",
+      "how explorer: cursor/grok-4.7 reasoning_effort=high fastMode=false contextWindow=256k",
+    ];
+    expect(problems(valid).filter((p) => !onlyGrokDefaults(p))).toEqual([]);
+    expect(problems(valid).some(onlyGrokDefaults)).toBe(true);
+    const invalid = [
+      "bug-fix: claudeAgent/claude-opus-5-5 effort=extreme",
+      "hillclimb: claudeAgent/claude-opus-5-5 fastMode=yes",
+      "why synthesizer: grok/grok-4.7 reasoningEffort=high",
+    ];
+    expect(problems(invalid).filter((p) => !onlyGrokDefaults(p))).toEqual([
+      "bug-fix: claudeAgent/claude-opus-5-5: effort=extreme is not one of low, medium, high, xhigh, max, ultracode, ultrathink",
+      "hillclimb: claudeAgent/claude-opus-5-5: fastMode=yes is not one of false, true",
+      'why synthesizer: grok/grok-4.7: "grok" cannot run child tasks (Provider instance is disabled.)',
+    ]);
+  });
+
   test("a model whose options are omitted or null reports the option instead of crashing", () => {
     for (const options of [undefined, null]) {
       const bare = structuredClone(catalog);
