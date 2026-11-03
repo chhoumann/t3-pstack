@@ -128,6 +128,14 @@ export function checkSheet(sheet, { roles, defaults, catalog }) {
   return problems;
 }
 
+// A catalog lists an option's allowed values either as `options: [{ id }]` or, as
+// orchestrator_capabilities can return them, as `values: [...]`.
+function allowedValues(option) {
+  if (Array.isArray(option?.values)) return option.values.map(String);
+  if (option?.type === "boolean") return ["true", "false"];
+  return (option?.options ?? []).map((o) => o.id);
+}
+
 function checkTarget({ providerInstanceId, model, options }, catalog) {
   if (!catalog) return [];
   const at = `${providerInstanceId}/${model}`;
@@ -143,7 +151,7 @@ function checkTarget({ providerInstanceId, model, options }, catalog) {
   const problems = [];
   for (const [id, value] of Object.entries(options)) {
     const option = known.find((o) => o.id === id);
-    const allowed = option?.type === "boolean" ? ["true", "false"] : (option?.options ?? []).map((o) => o.id);
+    const allowed = allowedValues(option);
     if (!option) problems.push(`${at}: no option "${id}" (has ${known.map((o) => o.id).join(", ") || "none"})`);
     else if (!allowed.includes(value)) problems.push(`${at}: ${id}=${value} is not one of ${allowed.join(", ")}`);
   }

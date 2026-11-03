@@ -147,6 +147,26 @@ describe("checkSheet against a catalog", () => {
     ]);
   });
 
+  test("a catalog that lists option values as `values` checks like one that nests them under `options`", () => {
+    const flat = structuredClone(catalog);
+    for (const provider of flat.providers) {
+      for (const model of provider.models) {
+        model.options = model.options?.map(({ id, type, options }) =>
+          type === "boolean" ? { id, values: [false, true] } : { id, values: options.map((o) => o.id) },
+        );
+      }
+    }
+    expect(
+      check(["bug-fix: claudeAgent/claude-opus-5-5 effort=high", "hillclimb: claudeAgent/claude-opus-5-5 fastMode=true"].join("\n"), flat),
+    ).toEqual([]);
+    expect(check("feature, refactoring: codex/gpt-6.1-sol reasoningEffort=extreme", flat)).toEqual(
+      check("feature, refactoring: codex/gpt-6.1-sol reasoningEffort=extreme"),
+    );
+    expect(check("hillclimb: claudeAgent/claude-opus-5-5 fastMode=yes", flat)).toEqual([
+      "hillclimb: claudeAgent/claude-opus-5-5: fastMode=yes is not one of false, true",
+    ]);
+  });
+
   test("a panel that repeats a target fails", () => {
     expect(check(`${PANEL}: claudeAgent/claude-opus-5-5, grok/grok-4.7, claudeAgent/claude-opus-5-5`)).toEqual([
       `${PANEL}: lists the same target twice`,
