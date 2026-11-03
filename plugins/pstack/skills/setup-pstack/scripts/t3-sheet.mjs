@@ -151,8 +151,8 @@ function checkTarget({ providerInstanceId, model, options }, catalog) {
 }
 
 // orchestrator_capabilities lists an option's values as a plain array, with
-// booleans as JSON booleans. Older T3 builds sent a `type` and an `options`
-// array of `{ id }`, which the check still reads.
+// booleans as JSON booleans. The `type` and `options: [{ id }]` shape is
+// still read for catalogs saved in that form.
 function allowedValues(option) {
   if (Array.isArray(option?.values)) return option.values.map(String);
   if (option?.type === "boolean") return ["true", "false"];
