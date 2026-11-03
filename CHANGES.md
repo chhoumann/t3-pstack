@@ -2,6 +2,22 @@
 
 This file is the release changelog, with one `## <version> - <title>` entry per release, newest first. The Cursor-to-T3 rewrite rules live in [`tools/substitutions.json`](tools/substitutions.json), and the [sync boundary](CONTRIBUTING.md#the-sync-boundary) in `CONTRIBUTING.md` defines how a change to upstream's skill content is declared.
 
+## 2.2.3 - Codex keeps running the session-start hook after a poteto-mode script runs
+
+On Codex 0.164 and later, a plugin hook's trust covers every file in the installed plugin. At each hook run Codex hashes the plugin folder, skipping only Python bytecode, virtual environments, and package metadata, and compares the hash with the `trusted_content_hash` it stores beside the entry's `trusted_hash` in `config.toml`. watch-pr's `bootstrap.ts` ran `bun install --frozen-lockfile` inside the installed plugin, and from then on Codex failed the session-start hook with `unsupported plugin entry type: .../skills/poteto-mode/scripts/node_modules/.bin/tsc`. After one watch-pr run, every later session in that Codex home started without the routing text, and rerunning the installer did not bring it back. `bootstrap.ts` now installs the scripts' runtime dependency, commander, in `${XDG_CACHE_HOME:-~/.cache}/t3-pstack/poteto-mode-tools/<install key>/`, and runs the script again with that `node_modules` on `NODE_PATH`, through `execve` where Bun has it. The installed plugin stays byte for byte as released. The file is now a declared fork, because upstream installs beside the scripts and has no Codex content hash to keep.
+
+When Codex lists no t3-pstack hook, `doctor` now gives Codex's reason, such as the fingerprint failure above, where it said only "no t3-pstack hook listed". When the hook reads `modified`, its fix now says that Codex turns the hook off whenever the plugin's files change.
+
+The same hash means that every release turns the Codex hook off, including one that Codex's own marketplace auto-update installs, with `plugin contents changed; hook approval required`, until the installer runs again. This release does not change that. The installer already trusts the hook on every run, `doctor` already fails on it, and the README now says that each release needs `update` on Codex.
+
+The installer's end-to-end test failed 3 tests under Codex 0.164 on `main`, as 2.2.0 recorded. They come from the same hash: deleting a skill from the installed plugin also takes the hook's trust, and a symlinked hooks file makes Codex list no hook at all. Their expectations now say so. A new test runs the installed watch-pr, then checks that the plugin folder is unchanged, that the hook's routing text reaches the session, and that doctor passes. With upstream's `bootstrap.ts` it fails on 1,122 new files under `skills/poteto-mode/scripts/node_modules`.
+
+On macOS with Codex 0.166.0 and Bun 1.4.4, the installer's end-to-end test passes 13 of 13, where `main` passes 9 and fails 3. `GIT_CONFIG_GLOBAL=/dev/null bun test tests/` passes 550, skips 47, and fails 0, and the poteto-mode script tests pass 113 of 113. In throwaway homes, a session after the installed watch-pr ran gets the routing text, where 2.2.1's fails the hook with the error above.
+
+A home that ran watch-pr under an earlier release keeps that `node_modules` in its old version folder. Codex installs each version in a new folder, so `npx -y github:chhoumann/t3-pstack update` moves the home to 2.2.3 and trusts the hook again. Neither hooks file changes. This is a patch release.
+
+Thanks to @rma1k0 for the report and its evidence ([#56](https://github.com/chhoumann/t3-pstack/issues/56)).
+
 ## 2.2.2 - doctor's fixes keep `--source`, the worktree audit reads paths with spaces, and `--bootstrap` never writes through a symlinked directory inside a component
 
 This release lands two pull requests from @J0UH that fix the port's own installer and tools. It syncs nothing from Lauren's pstack, so all three components stay pinned at cursor/plugins `c742dd6`.
