@@ -945,6 +945,42 @@
       "replacement": "hourly schedule_task",
       "rationale": "the plan arms a schedule_task; the checker's marker moves with the template",
       "files": "^skills/poteto-mode/scripts/check-plan\\.(?:mjs|test\\.ts)$"
+    },
+    {
+      "pattern": "Type check and lint are not a pin.",
+      "replacement": "Type check and lint are not a pin. The pin is scaffolding. Remove it once the move lands, unless it asserts a contract a caller relies on.",
+      "rationale": "port policy, not a T3 mechanism: a characterization pin's expected values are the old code's output, so kept after the move it fails on every intended change and catches no bug",
+      "files": "^skills/poteto-mode/playbooks/refactoring\\.md$"
+    },
+    {
+      "pattern": "Skip it when the test would be expensive, integration-heavy, or unclear.",
+      "replacement": "Skip it when the test would be expensive, integration-heavy, or unclear. The test must also pass the **test-behavior-not-implementation** principle skill. One that only restates the value, string, or number the fix produced fails it, so keep that repro as PR evidence, not a committed test.",
+      "rationale": "port policy, not a T3 mechanism: a test that pins the value, string, or number the fix produced also fails before the fix, so failing first alone lets it in as a permanent test",
+      "files": "^skills/poteto-mode/playbooks/bug-fix\\.md$"
+    },
+    {
+      "pattern": "The goal is a focused regression test that fails before the fix and passes after it.",
+      "replacement": "The goal is a focused regression test that fails before the fix and passes after it. Failing first is not enough. The test must also pass the **test-behavior-not-implementation** principle skill. When the only test you can write restates the value, string, or number the fix produced, keep the repro as evidence and add no test.",
+      "rationale": "port policy, not a T3 mechanism: a test that pins the value, string, or number the fix produced also fails before the fix, so failing first alone lets it in as a permanent test",
+      "files": "^skills/tdd/SKILL\\.md$"
+    },
+    {
+      "pattern": "The canonical shape is the failing test first, then the fix on top.",
+      "replacement": "The canonical shape is the failing test first, then the fix on top. That test must also pass the **test-behavior-not-implementation** principle skill. When the only test you can write restates the value, string, or number the fix produced, the failing run stays PR evidence.",
+      "rationale": "port policy, not a T3 mechanism: a test that pins the value, string, or number the fix produced also fails before the fix, so failing first alone lets it in as a permanent test",
+      "files": "^skills/principle-sequence-verifiable-units/SKILL\\.md$"
+    },
+    {
+      "pattern": "like a big port or migration (the **show-me-your-work** skill).",
+      "replacement": "like a big port or migration (the **show-me-your-work** skill). A scripted check is evidence. Commit it as a test only when it asserts behavior a user can observe (the **test-behavior-not-implementation** principle skill).",
+      "rationale": "port policy, not a T3 mechanism: a byte-identity, equivalence, or measurement script committed as a test takes the old output or a measured value as its oracle",
+      "files": "^skills/principle-prove-it-works/SKILL\\.md$"
+    },
+    {
+      "pattern": "Report the findings. Do not apply fixes.",
+      "replacement": "Report the findings. Do not apply fixes. A finding's repro is proof for this review. Whoever fixes it judges the regression test against the **test-behavior-not-implementation** principle skill and does not commit the repro as is.",
+      "rationale": "port policy, not a T3 mechanism: an adversary's repro is written to fail on the change, often by pinning the value it saw, so committed as is it becomes a change detector",
+      "files": "^skills/interrogate/SKILL\\.md$"
     }
   ],
   "denylist": [

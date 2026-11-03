@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 # TDD Bug Fix
 
-When fixing a bug with a clear, cheap test path, make the broken behavior executable before changing production code. The goal is a focused regression test that fails before the fix and passes after it.
+When fixing a bug with a clear, cheap test path, make the broken behavior executable before changing production code. The goal is a focused regression test that fails before the fix and passes after it. Failing first is not enough. The test must also pass the **test-behavior-not-implementation** principle skill. When the only test you can write restates the value, string, or number the fix produced, keep the repro as evidence and add no test.
 
 Do not force a test when it would be impractical. If the available test would require broad harness setup, brittle mocks, slow end-to-end infrastructure, production-only state, vague reproduction steps, or large unrelated fixture churn, skip adding a new test and use the closest useful verification instead.
 

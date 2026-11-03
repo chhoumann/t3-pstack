@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 # Interrogate
 
-Adversaries try to break a change or a design. A finding survives only when a run proves it. Report the findings. Do not apply fixes.
+Adversaries try to break a change or a design. A finding survives only when a run proves it. Report the findings. Do not apply fixes. A finding's repro is proof for this review. Whoever fixes it judges the regression test against the **test-behavior-not-implementation** principle skill and does not commit the repro as is.
 
 ## Frame
 
