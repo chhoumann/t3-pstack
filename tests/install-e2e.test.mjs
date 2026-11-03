@@ -457,7 +457,8 @@ describe.skipIf(!enabled)("the installer, on a Codex home that changes while it 
     expect(status).toBe(1);
     expect(row(report, ".codex").steps).toEqual([]);
     expect(failing(row(report, ".codex").checks)).toEqual([
-      `session-start hook trusted: no t3-pstack hook listed`,
+      `session-start hook trusted: no t3-pstack hook listed; Codex: skipping plugin hook in ${hooksFile()}: ` +
+        `failed to fingerprint plugin contents: unsupported plugin entry type: ${hooksFile()}`,
     ]);
     expect(await trustState()).toBe(null);
   }, 300_000);
