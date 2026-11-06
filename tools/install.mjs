@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 // t3-pstack's installer. `install`, or `update`, the same command, brings
 // every Claude Code and Codex home T3 can run to this package's version of
-// t3-pstack, trusts the Codex session-start hook, and moves the model sheet to
-// its one path per machine. Each step converges, so a second run changes
-// nothing. `doctor` checks the same homes and writes nothing itself, though
-// the Codex app-server it starts refreshes a Git marketplace, as any T3 Codex
-// thread does. Both exit 1 when a check fails.
+// t3-pstack, pins each Codex home's marketplace to that version's tag, trusts
+// the Codex session-start hook, and moves the model sheet to its one path per
+// machine. Each step converges, so a second run changes nothing. `doctor`
+// checks the same homes and writes nothing itself, though the Codex app-server
+// it starts refreshes a Git marketplace, as any T3 Codex thread does. Both
+// exit 1 when a check fails.
 //
 // Each home's t3-pstack marketplace must come from chhoumann/t3-pstack or from
 // this run's --source. A home whose marketplace has another source, such as a
@@ -13,6 +14,13 @@
 // trusted, and doctor fails it with that source. A run never switches a
 // home's source: one from chhoumann/t3-pstack stays on it under another
 // --source, and doctor warns with the commands that switch it.
+//
+// The pin is the `ref` of a Codex home's Git marketplace, the tag v<version>.
+// Codex's own auto-upgrade leaves a lightweight tag, as each release's is,
+// where it is, so a release reaches the home only through this installer,
+// which trusts the hook again. A local
+// directory has no tag and stays unpinned. Claude Code homes still auto-update
+// from their marketplace's default branch.
 //
 //   npx -y github:chhoumann/t3-pstack <install|update|doctor>
 //     --source <owner/repo|git URL|dir>   marketplace source, default chhoumann/t3-pstack

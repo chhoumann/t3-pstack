@@ -8,6 +8,11 @@
 // its command runs. Codex's own trust covers the entry alone, and the script
 // changes with each release, so the marketplace source check is what vouches
 // for the script.
+//
+// Codex 0.164 and later also tie that trust to every file in the plugin, so a
+// release that Codex's own marketplace auto-upgrade installs turns the hook
+// off. So the installer pins a Git marketplace to this release's tag, and only
+// the installer, which trusts the hook again, moves it.
 import { spawn } from "node:child_process";
 import { closeSync, constants, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
@@ -133,6 +138,7 @@ async function pluginState(server, dir, skills) {
   const plugin = marketplaces.flatMap((m) => m.plugins ?? []).find((p) => p.id === PLUGIN_ID);
   const versions = installedVersions(dir);
   return {
+    marketplace: config.marketplaces?.[MARKETPLACE],
     sources: marketplaceSources(config),
     installed: plugin?.installed === true,
     enabled: plugin?.enabled === true,
@@ -214,6 +220,10 @@ export async function installCodex(home, { source, trusted, version, skills, cod
   }
   // Nothing installs from a marketplace of another source; doctor names it.
   if (!trustedOnly(before.sources, trusted)) return steps;
+  const tag = `v${version}`;
+  if (before.marketplace.source_type === "git" && before.marketplace.ref !== tag) {
+    steps.push(...(await pinMarketplace(home, trusted, tag, () => plugin("marketplace", "upgrade", MARKETPLACE))));
+  }
   const step = codexStep(before, version);
   if (step) {
     // A local marketplace is read in place; a Git one is a snapshot to refresh.
@@ -231,6 +241,41 @@ export async function installCodex(home, { source, trusted, version, skills, cod
   }
   steps.push(...(await withServer(home, (server) => trustHooks(server, trusted, codexHook))));
   return steps;
+}
+
+// Codex's auto-upgrade moves a Git marketplace only when the hash `git
+// ls-remote` reports for its ref differs from the commit it installed, so a
+// lightweight tag, as each release's is, holds it. The ref is written before
+// `upgrade` makes Codex fetch it, so an app-server that starts in between,
+// such as the installer's own, fetches the tag too. A source without the tag, such as a
+// fork that never pushed it, gets its old ref back and updates as before.
+async function pinMarketplace(home, trusted, tag, upgrade) {
+  const keyPath = `marketplaces.${MARKETPLACE}.ref`;
+  const pinned = await withServer(home, async (server) => {
+    const { config, layers } = await server.request("config/read", { includeLayers: true });
+    if (!trustedOnly(marketplaceSources(config), trusted)) return null;
+    const user = layers.find((layer) => layer.name.type === "user");
+    const written = await server.request("config/value/write", { keyPath, value: tag, mergeStrategy: "replace", expectedVersion: user.version });
+    return { was: config.marketplaces[MARKETPLACE].ref ?? null, version: written.version };
+  });
+  if (!pinned) return [];
+  try {
+    upgrade();
+  } catch (err) {
+    await withServer(home, (server) =>
+      server.request("config/value/write", { keyPath, value: pinned.was, mergeStrategy: "replace", expectedVersion: pinned.version }),
+    );
+    const stays = pinned.was ? `on ${pinned.was}` : "unpinned";
+    return [`Codex could not fetch ${tag}, so the marketplace stays ${stays} (${err.message.split("\n")[0]})`];
+  }
+  return [`pinned the marketplace to ${tag} (was ${pinned.was ?? "unpinned"})`];
+}
+
+// A local directory is read in place and has no tag to pin.
+export function pinCheck(marketplace, tag, hint) {
+  if (marketplace?.source_type === "local") return check("marketplace pin", true, "none, since a local directory has no tag");
+  const ref = marketplace?.ref;
+  return check("marketplace pin", ref === tag, !marketplace ? "no marketplace" : ref === tag ? tag : `${ref ?? "none"}, expected ${tag}`, hint);
 }
 
 // One app-server session checks the marketplace source, lists the hooks, and
@@ -278,6 +323,7 @@ export async function doctorCodex(home, { source, trusted, version, skills, code
     const good = (h) => h.trustStatus === "trusted" && isPinned(h, codexHook);
     return [
       marketplaceCheck(state.sources, { source, trusted }, `remove it with \`CODEX_HOME=${home.dir} codex plugin marketplace remove ${MARKETPLACE}\``),
+      pinCheck(state.marketplace, `v${version}`, hint),
       check(
         "installed",
         state.installed && installed === version && state.intact,
