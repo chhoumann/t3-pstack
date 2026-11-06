@@ -169,12 +169,6 @@
       "files": "^skills/poteto-mode/SKILL\\.md$"
     },
     {
-      "files": "^skills/poteto-mode/SKILL\\.md$",
-      "pattern": "- Contested design → the **interrogate** skill (multi-model adversarial) before shipping.",
-      "replacement": "- Contested design → the **interrogate** skill (multi-model adversarial) before shipping.\n- A Bug fix, Feature, or Refactoring diff → the **interrogate** skill with the `interrogate reviewers` panel before Opening a PR. Skip it only for a mechanical change, such as a rename or a dependency bump, and say so in the reply. Only interrogate's verified findings block the PR. A nit, or an edge case that cannot occur in practice, never blocks: batch accepted nits into one final fix run or drop them, and give each dismissal its reason. Round 1 reviews the whole change, and each later round reviews only the fix diff. After every fix round, a `feature, refactoring` delegate runs the real artifact and reports `pass`, `fail`, or `could not run` with its evidence. `fail` blocks like a verified finding. `could not run` is not a pass and starts no fix, so report it. After three fix rounds, stop and report the open findings, what kind of failure they suggest, and a recommendation.",
-      "rationale": "Playbooks: Bug fix, Feature, Refactoring and Review loop (t3-pstack 1.0.1 and 1.0.6: a cross-family review gate with a three-round cap). Since pstack 0.15.35 interrogate keeps only findings a rerun confirms, so those verified findings are the gate, in place of its retired Act on bucket and warning severity"
-    },
-    {
       "pattern": "Agent-facing prose also follows the **create-skill** skill (Cursor's built-in for authoring SKILL.md files).",
       "replacement": "Agent-facing prose also follows the harness's skill-authoring skill (`skill-creator` where installed, else the Agent Skills format).",
       "rationale": "create-skill is a Cursor built-in; Codex ships skill-creator",
