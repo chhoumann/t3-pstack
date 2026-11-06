@@ -10,7 +10,9 @@
 // Each home's t3-pstack marketplace must come from chhoumann/t3-pstack or from
 // this run's --source. A home whose marketplace has another source, such as a
 // local --source from an earlier run, gets nothing installed and no hook
-// trusted, and doctor fails it with that source.
+// trusted, and doctor fails it with that source. A run never switches a
+// home's source: one from chhoumann/t3-pstack stays on it under another
+// --source, and doctor warns with the commands that switch it.
 //
 //   npx -y github:chhoumann/t3-pstack <install|update|doctor>
 //     --source <owner/repo|git URL|dir>   marketplace source, default chhoumann/t3-pstack
@@ -26,7 +28,7 @@ import { parseArgs } from "node:util";
 
 import { doctorClaude, installClaude } from "./install/claude.mjs";
 import { doctorCodex, installCodex } from "./install/codex.mjs";
-import { check, hasCli, HOME_REPO, INSTALL_HINT, parseSource, readJson } from "./install/common.mjs";
+import { check, hasCli, HOME_REPO, installHint, parseSource, readJson } from "./install/common.mjs";
 import { discoverHomes } from "./install/homes.mjs";
 import { doctorSheet, moveSheet, sheetPath } from "./install/sheet.mjs";
 import { FROZEN_HOOKS } from "./plugin.mjs";
@@ -77,6 +79,7 @@ async function run(argv, env, home) {
   const facts = pluginFacts(source.local ?? fileURLToPath(new URL("..", import.meta.url)));
   const trusted = new Set([parseSource(HOME_REPO, home).key, source.key]);
   const context = { source, trusted, version: facts.version, skills: facts.skills, codexHook: facts.codexHook };
+  const hint = installHint(source);
   const { homes, settings } = discoverHomes({
     env,
     home,
@@ -95,14 +98,14 @@ async function run(argv, env, home) {
       continue;
     }
     if (command === "doctor" && !existsSync(target.dir)) {
-      row.checks.push(check("installed", false, "the home does not exist", INSTALL_HINT));
+      row.checks.push(check("installed", false, "the home does not exist", hint));
       continue;
     }
     try {
       if (command !== "doctor") row.steps = await harness.install(target, context);
       row.checks.push(...(await harness.doctor(target, context)));
     } catch (err) {
-      row.checks.push(check(command === "doctor" ? "doctor" : "install", false, err.message, INSTALL_HINT));
+      row.checks.push(check(command === "doctor" ? "doctor" : "install", false, err.message, hint));
     }
   }
   const sheet = sheetPath(env, home);
@@ -110,9 +113,9 @@ async function run(argv, env, home) {
   try {
     if (command !== "doctor") report.sheet.steps = moveSheet(sheet, homes);
   } catch (err) {
-    report.sheet.checks.push(check("move", false, err.message, INSTALL_HINT));
+    report.sheet.checks.push(check("move", false, err.message, hint));
   }
-  report.sheet.checks.push(...doctorSheet(sheet, homes, { catalog, roles: facts.roles, tiers: facts.tiers }));
+  report.sheet.checks.push(...doctorSheet(sheet, homes, { catalog, roles: facts.roles, tiers: facts.tiers, hint }));
   const all = [...report.homes.flatMap((row) => row.checks), ...report.sheet.checks];
   report.failed = all.filter((c) => !c.ok && !c.warn).length;
   report.warnings = all.filter((c) => !c.ok && c.warn).length;

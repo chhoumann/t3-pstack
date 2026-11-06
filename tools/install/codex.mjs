@@ -16,7 +16,7 @@ import { hookDigest } from "../plugin.mjs";
 import {
   check,
   codexSource,
-  INSTALL_HINT,
+  installHint,
   isPlainCopy,
   launch,
   MARKETPLACE,
@@ -25,6 +25,7 @@ import {
   PLUGIN_ID,
   pluginIntact,
   runCli,
+  trustedOnly,
   updated,
 } from "./common.mjs";
 
@@ -202,7 +203,7 @@ export async function installCodex(home, { source, trusted, version, skills, cod
     before = await state();
   }
   // Nothing installs from a marketplace of another source; doctor names it.
-  if (!marketplaceCheck(before.sources, trusted).ok) return steps;
+  if (!trustedOnly(before.sources, trusted)) return steps;
   const step = codexStep(before, version);
   if (step) {
     // A local marketplace is read in place; a Git one is a snapshot to refresh.
@@ -231,7 +232,7 @@ export async function installCodex(home, { source, trusted, version, skills, cod
 // entry from any other hooks file stays untrusted, and doctor names it.
 async function trustHooks(server, trusted, pin) {
   const { config, layers } = await server.request("config/read", { includeLayers: true });
-  if (!marketplaceCheck(marketplaceSources(config), trusted).ok) return [];
+  if (!trustedOnly(marketplaceSources(config), trusted)) return [];
   const user = layers.find((layer) => layer.name.type === "user");
   const pending = (await pluginHooks(server)).filter(
     (h) => (h.trustStatus === "untrusted" || h.trustStatus === "modified") && isPinned(h, pin),
@@ -255,7 +256,8 @@ async function trustHooks(server, trusted, pin) {
   return pending.map((h) => `trusted hook ${h.key} (was ${h.trustStatus})`);
 }
 
-export async function doctorCodex(home, { version, skills, trusted, codexHook }) {
+export async function doctorCodex(home, { source, trusted, version, skills, codexHook }) {
+  const hint = installHint(source);
   return withServer(home, async (server) => {
     const state = await pluginState(server, home.dir, skills);
     const hooks = await pluginHooks(server);
@@ -264,7 +266,7 @@ export async function doctorCodex(home, { version, skills, trusted, codexHook })
     const installed = state.versions.join(", ");
     const good = (h) => h.trustStatus === "trusted" && isPinned(h, codexHook);
     return [
-      marketplaceCheck(state.sources, trusted, `remove it with \`CODEX_HOME=${home.dir} codex plugin marketplace remove ${MARKETPLACE}\``),
+      marketplaceCheck(state.sources, { source, trusted }, `remove it with \`CODEX_HOME=${home.dir} codex plugin marketplace remove ${MARKETPLACE}\``),
       check(
         "installed",
         state.installed && installed === version && state.intact,
@@ -275,16 +277,16 @@ export async function doctorCodex(home, { version, skills, trusted, codexHook })
             : state.intact
               ? installed
               : `its files in ${join(cacheDir(home.dir), installed)} are missing`,
-        INSTALL_HINT,
+        hint,
       ),
-      check("enabled", state.enabled, state.enabled ? "yes" : "no", INSTALL_HINT),
+      check("enabled", state.enabled, state.enabled ? "yes" : "no", hint),
       check(
         "session-start hook trusted",
         hooks.length > 0 && hooks.every(good),
         hooks.length
           ? hooks.map((h) => `${h.key} ${h.trustStatus}${isPinned(h, codexHook) ? "" : `, not from the ${codexHook.path} this release pins`}`).join("; ")
           : "no t3-pstack hook listed",
-        INSTALL_HINT,
+        hint,
       ),
       check(
         "no plain copies of plugin skills",

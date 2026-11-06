@@ -2,6 +2,27 @@
 
 This file is the release changelog, with one `## <version> - <title>` entry per release, newest first. The Cursor-to-T3 rewrite rules live in [`tools/substitutions.json`](tools/substitutions.json), and the [sync boundary](CONTRIBUTING.md#the-sync-boundary) in `CONTRIBUTING.md` defines how a change to upstream's skill content is declared.
 
+## 2.2.2 - doctor's fixes keep `--source`, the worktree audit reads paths with spaces, and `--bootstrap` never writes through a symlinked directory inside a component
+
+This release lands two pull requests from @J0UH that fix the port's own installer and tools. It syncs nothing from Lauren's pstack, so all three components stay pinned at cursor/plugins `c742dd6`.
+
+Every fix `doctor` printed was `npx -y github:chhoumann/t3-pstack install`, whatever `--source` the run had. So on a home with no marketplace, following it added `chhoumann/t3-pstack` instead of the source the user named. Each fix now reruns with the run's `--source` (#39). A GitHub `--source` also names that repository as the package to run, as in `npx -y github:owner/fork install --source owner/fork`, since a fork's installer converges on the fork's version. A local or non-GitHub `--source` keeps `github:chhoumann/t3-pstack` and adds `--source <arg>`. With no `--source`, or with `--source chhoumann/t3-pstack`, the text is unchanged. A run still never switches a home's source, so a home already on `chhoumann/t3-pstack` stays on it under another `--source`. Before, every check on that home passed while the report's first line named the other source. Its marketplace check now warns, as in `marketplace: chhoumann/t3-pstack, not --source owner/fork`, and prints the commands that move it. A warning does not fail the run, and the install still converges the home on the source it has. The README's install paragraph and the installer's header now say that a run never switches a home's source.
+
+`worktree-audit.sh` took each worktree path from `git worktree list --porcelain` with awk's `$2`, which stops at the first space (#36). Under a parent such as `/work/My Project/`, the main worktree and every other one read as `/work/My`, so the audit skipped them all as the main worktree and printed an empty table. It now reads the whole path, and its declared fork in `tools/forks.json` says so. `bun tools/sync.mjs --bootstrap` checked only the last part of each path for a symlink. With `plugins/pstack/skills/arena` linked to a directory outside the checkout, it overwrote the `SKILL.md` behind the link and exited 0. It now reports a link at any directory inside the component the way the normal sync does, as `FAIL: symlink at plugins/pstack/skills/arena`, exits 1, and writes nothing. Like the normal sync, it still does not check the component's own path, such as `plugins/pstack` itself.
+
+At `c742dd6` each component's dry run reports no undeclared fork, no denylist hit, and no substitution that matches nothing. Neither hooks file changes, and the README's skill count stays at 66. The four new tests in `tests/install.test.mjs`, `tests/worktree-audit.test.mjs`, and `tests/sync.test.mjs` fail against 2.2.1's code and pass here. On macOS with Claude Code 2.1.317 and Codex 0.166, `GIT_CONFIG_GLOBAL=/dev/null bun test tests/` passes 554, skips 46, and fails 0. The installer's end-to-end test passes 9 and fails the same 3 that 2.2.0 recorded failing on `main` under Codex 0.164, and that fail on 2.2.1 here: "install reinstalls a plugin whose files are gone, and enables a disabled one", "doctor flags a plain copy of a plugin skill, not a user's own skill that shares a name", and "trusts nothing from a hooks file that is a symlink, even to the pinned text".
+
+This is a patch release. It fixes how the installer, the worktree audit, and the sync behave, adds no skill, capability, or harness, and needs no action from users.
+
+Thanks to @J0UH for both fixes. Their commits from #39 and #36 land here with authorship kept. #36's own commit for a 2.0.0-rc.16 release is left out, since this release carries the version, the changelog entry, and the manifests.
+
+| Change | 2.2.1 | 2.2.2 | Source |
+| --- | --- | --- | --- |
+| `doctor`'s fixes under `--source` | Name `github:chhoumann/t3-pstack install` without `--source`. | Rerun with the run's `--source`, from that repository when it is on GitHub. | #39 |
+| A home on `chhoumann/t3-pstack` under another `--source` | Passes every check. | Warns, with the commands that move it. | #39 |
+| Worktree audit under a path with a space | Lists no worktrees. | Lists every worktree. | #36 |
+| `--bootstrap` with a symlinked directory inside a component | Writes through the link to its target and exits 0. | Fails naming the link and writes nothing. | #36 |
+
 ## 2.2.1 - setup-pstack's sheet check reads option values the way orchestrator_capabilities lists them
 
 `orchestrator_capabilities` lists each option's values as a plain array, such as `{ "id": "effort", "values": ["low", "medium", "high"] }` and `{ "id": "fastMode", "values": [false, true] }`. `t3-sheet.mjs` read only the `type` and `options: [{ id }]` shape that its fixture uses. Given the live shape, it allowed no values, so setup-pstack's check rejected every option on every line, valid ones included, with `effort=high is not one of` followed by an empty list. The check now reads `values`, compares each one as a string so `fastMode=true` matches a JSON `true`, and still reads the older shape.
