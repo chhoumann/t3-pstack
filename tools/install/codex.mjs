@@ -243,10 +243,11 @@ export async function installCodex(home, { source, trusted, version, skills, cod
   return steps;
 }
 
-// Codex's auto-upgrade moves a Git marketplace only when the commit its ref
-// names changes, so a tag holds it. The ref is written before `upgrade` makes
-// Codex fetch it, so an app-server that starts in between, such as the
-// installer's own, fetches the tag too. A source without the tag, such as a
+// Codex's auto-upgrade moves a Git marketplace only when the hash `git
+// ls-remote` reports for its ref differs from the commit it installed, so a
+// lightweight tag, as each release's is, holds it. The ref is written before
+// `upgrade` makes Codex fetch it, so an app-server that starts in between,
+// such as the installer's own, fetches the tag too. A source without the tag, such as a
 // fork that never pushed it, gets its old ref back and updates as before.
 async function pinMarketplace(home, trusted, tag, upgrade) {
   const keyPath = `marketplaces.${MARKETPLACE}.ref`;

@@ -16,8 +16,9 @@
 // --source, and doctor warns with the commands that switch it.
 //
 // The pin is the `ref` of a Codex home's Git marketplace, the tag v<version>.
-// Codex's own auto-upgrade leaves a tag where it is, so a release reaches the
-// home only through this installer, which trusts the hook again. A local
+// Codex's own auto-upgrade leaves a lightweight tag, as each release's is,
+// where it is, so a release reaches the home only through this installer,
+// which trusts the hook again. A local
 // directory has no tag and stays unpinned. Claude Code homes still auto-update
 // from their marketplace's default branch.
 //
