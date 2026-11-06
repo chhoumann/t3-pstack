@@ -11,7 +11,7 @@
 *.code-workspace
 .claude/settings.local.json
 
-# bun deps for the vendored poteto-mode scripts (bootstrap.ts installs them on first run)
+# bun deps for the vendored poteto-mode scripts' typecheck and tests (bootstrap.ts installs the runtime ones in ~/.cache/t3-pstack)
 plugins/pstack/skills/poteto-mode/scripts/node_modules/
 
 # bun installs the typebox peer for the Pi extension tests

@@ -9,7 +9,7 @@
 // changes with each release, so the marketplace source check is what vouches
 // for the script.
 import { spawn } from "node:child_process";
-import { closeSync, constants, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync } from "node:fs";
+import { closeSync, constants, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 
 import { hookDigest } from "../plugin.mjs";
@@ -146,6 +146,16 @@ async function pluginHooks(server) {
   return data.flatMap((entry) => entry.hooks).filter((hook) => hook.pluginId === PLUGIN_ID);
 }
 
+// Codex trusts a plugin hook with a hash of every file in the plugin. When it
+// cannot hash them, as with a symlink in the plugin, it lists no hook and
+// says why in a warning that names the plugin's real path.
+async function pluginHookWarnings(server, dir) {
+  if (!existsSync(cacheDir(dir))) return [];
+  const cache = realpathSync(cacheDir(dir));
+  const { data } = await server.request("hooks/list", {});
+  return data.flatMap((entry) => entry.warnings ?? []).filter((warning) => warning.includes(cache));
+}
+
 // A file's text, read once without following a symlink, or null when it is a
 // symlink or not a regular file.
 function readRegularFile(path) {
@@ -261,6 +271,7 @@ export async function doctorCodex(home, { source, trusted, version, skills, code
   return withServer(home, async (server) => {
     const state = await pluginState(server, home.dir, skills);
     const hooks = await pluginHooks(server);
+    const warnings = hooks.length ? [] : await pluginHookWarnings(server, home.dir);
     const listed = (await server.request("skills/list", { cwds: [neutralCwd()] })).data.flatMap((entry) => entry.skills);
     const plain = listed.filter((skill) => isPlainCopy(skill.name, skill.path, skills)).map((skill) => skill.path);
     const installed = state.versions.join(", ");
@@ -285,8 +296,10 @@ export async function doctorCodex(home, { source, trusted, version, skills, code
         hooks.length > 0 && hooks.every(good),
         hooks.length
           ? hooks.map((h) => `${h.key} ${h.trustStatus}${isPinned(h, codexHook) ? "" : `, not from the ${codexHook.path} this release pins`}`).join("; ")
-          : "no t3-pstack hook listed",
-        hint,
+          : ["no t3-pstack hook listed", ...warnings.map((warning) => `Codex: ${warning}`)].join("; "),
+        hooks.some((h) => h.trustStatus === "modified")
+          ? `${hint}; Codex 0.164 and later turn the hook off whenever the plugin's files change, as each update does`
+          : hint,
       ),
       check(
         "no plain copies of plugin skills",

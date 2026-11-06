@@ -35,7 +35,7 @@ const SHEET = "# budget: large (xhigh)\nbug-fix: inherit-parent\nsession hook: o
 let root;
 let home;
 const saved = {};
-const ISOLATED = ["HOME", "CODEX_HOME", "CLAUDE_CONFIG_DIR", "T3CODE_HOME", "XDG_CONFIG_HOME", "GIT_CONFIG_GLOBAL"];
+const ISOLATED = ["HOME", "CODEX_HOME", "CLAUDE_CONFIG_DIR", "T3CODE_HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "GIT_CONFIG_GLOBAL"];
 
 function sh(bin, args, env = {}) {
   const r = spawnSync(bin, args, { cwd: root, env: { ...process.env, ...env }, encoding: "utf8" });
@@ -262,8 +262,13 @@ describe.skipIf(!enabled)("the installer, end to end", () => {
     rmSync(poolRecord.installPath, { recursive: true });
     edit(join(home, ".codex-work/config.toml"), /(\[plugins\."t3-pstack@t3-pstack"\]\s*enabled = )true/, "$1false");
 
+    // Codex trusts the hook with a hash of every file in the plugin, so the
+    // deleted skill takes the trust with it until the files are back.
     const doctor = installer("doctor").report;
-    expect(failing(row(doctor, ".codex").checks)).toEqual([`installed: its files in ${codexCache} are missing`]);
+    expect(failing(row(doctor, ".codex").checks)).toEqual([
+      `installed: its files in ${codexCache} are missing`,
+      `session-start hook trusted: ${HOOK} modified`,
+    ]);
     expect(failing(row(doctor, ".claude-pool").checks)).toEqual([
       `installed: ${version}, but its files at ${poolRecord.installPath} are missing`,
     ]);
@@ -285,6 +290,21 @@ describe.skipIf(!enabled)("the installer, end to end", () => {
     expect(failing(row(report, ".codex").checks)).toEqual([`no plain copies of plugin skills: ${join(home, ".agents/skills/why/SKILL.md")}`]);
     expect(status).toBe(1);
     rmSync(join(home, ".agents/skills/why"), { recursive: true });
+    expect(installer("doctor").status).toBe(0);
+  }, 300_000);
+
+  test("a poteto-mode script leaves the installed plugin as released, so the hook still routes", async () => {
+    const plugin = join(home, ".codex/plugins/cache/t3-pstack/t3-pstack", version);
+    const files = () => readdirSync(plugin, { recursive: true }).sort();
+    const before = files();
+    const watch = spawnSync(join(plugin, "skills/poteto-mode/scripts/watch-pr/watch-pr"), ["--help"], { cwd: root, encoding: "utf8" });
+    expect(watch.status, watch.stderr).toBe(0);
+    expect(watch.stdout).toStartWith("Usage: watch-pr");
+    expect(files()).toEqual(before);
+
+    const after = await probe(join(home, ".codex"));
+    expect(after.hookEvents).toEqual(["hook/started", "hook/completed"]);
+    expect(after.routedMessages).toBe(1);
     expect(installer("doctor").status).toBe(0);
   }, 300_000);
 });
@@ -437,7 +457,8 @@ describe.skipIf(!enabled)("the installer, on a Codex home that changes while it 
     expect(status).toBe(1);
     expect(row(report, ".codex").steps).toEqual([]);
     expect(failing(row(report, ".codex").checks)).toEqual([
-      `session-start hook trusted: ${HOOK} untrusted, not from the hooks/codex-hooks.json this release pins`,
+      `session-start hook trusted: no t3-pstack hook listed; Codex: skipping plugin hook in ${hooksFile()}: ` +
+        `failed to fingerprint plugin contents: unsupported plugin entry type: ${hooksFile()}`,
     ]);
     expect(await trustState()).toBe(null);
   }, 300_000);
