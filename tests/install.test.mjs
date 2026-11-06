@@ -24,7 +24,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { doctorClaude, installClaude, syncScopedRecords } from "../tools/install/claude.mjs";
-import { AppServer } from "../tools/install/codex.mjs";
+import { AppServer, pinCheck } from "../tools/install/codex.mjs";
 import { parseSource, writeAtomic } from "../tools/install/common.mjs";
 import { discoverHomes } from "../tools/install/homes.mjs";
 import { doctorSheet, moveSheet } from "../tools/install/sheet.mjs";
@@ -416,6 +416,27 @@ describe("codex app-server output that is not JSON-RPC", () => {
     writeFileSync(bin, "#!/bin/sh\necho 'token sk-live-123 expired'\nexec cat >/dev/null\n");
     chmodSync(bin, 0o755);
     await expect(AppServer.start({ dir, bin })).rejects.toThrow(new Error("codex app-server printed a line that is not JSON-RPC"));
+  });
+});
+
+describe("doctor's check of a Codex marketplace's pin", () => {
+  test("passes on this release's tag, and on a local directory, which has no tag", () => {
+    const git = { source_type: "git", source: "https://github.com/chhoumann/t3-pstack.git" };
+    const pin = (marketplace) => pinCheck(marketplace, "v2.2.5", FIX);
+    expect(pin({ ...git, ref: "v2.2.5" })).toEqual({ name: "marketplace pin", ok: true, detail: "v2.2.5" });
+    expect(pin({ source_type: "local", source: "/src/t3-pstack" })).toEqual({
+      name: "marketplace pin",
+      ok: true,
+      detail: "none, since a local directory has no tag",
+    });
+    expect([git, { ...git, ref: "v2.2.3" }, { ...git, ref: "main" }, undefined].map(pin)).toEqual(
+      ["none, expected v2.2.5", "v2.2.3, expected v2.2.5", "main, expected v2.2.5", "no marketplace"].map((detail) => ({
+        name: "marketplace pin",
+        ok: false,
+        detail,
+        fix: FIX,
+      })),
+    );
   });
 });
 
