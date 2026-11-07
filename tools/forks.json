@@ -8,13 +8,13 @@
     },
     "plugins/pstack/skills/poteto-mode/playbooks/feature.md": {
       "kind": "policy",
-      "why": "Points step 4 at the Subagents rule that every file-writing delegate gets its own worktree from HEAD, and carries the rule from Michael Denyer's pstack-claude that the delegator commits what the delegate builds on, names that commit in the brief, and never writes or runs a suite in a worktree a delegate still holds.",
+      "why": "Points step 4 at the Subagents rule that a file-writing delegate works alone in the delegator's checkout or in its own worktree from HEAD, and carries the rule from Michael Denyer's pstack-claude that the delegator commits what the delegate builds on, names that commit in the brief, and never writes or runs a suite in a worktree a delegate still holds.",
       "since": "2.0.0-rc.2",
       "upstream": "not-proposed"
     },
     "plugins/pstack/skills/poteto-mode/playbooks/opening-a-pr.md": {
       "kind": "policy",
-      "why": "Carries the rule from Michael Denyer's pstack-claude that every live agent holding a worktree is stopped, and the stop confirmed, before a commit, merge, or deploy from it, and drops the reset --hard between delegates on one branch so that each gets its own worktree.",
+      "why": "Carries the rule from Michael Denyer's pstack-claude that every live agent holding a worktree is stopped, and the stop confirmed, before a commit, merge, or deploy from it, and drops the reset --hard between delegates on one branch so that each writer gets its own worktree and the PR opens from a T3 thread's branch.",
       "since": "2.0.0-rc.2",
       "upstream": "not-proposed"
     },
