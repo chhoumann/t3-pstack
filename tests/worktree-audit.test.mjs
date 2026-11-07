@@ -80,7 +80,7 @@ function runAudit({ root, repo, bin }, ...args) {
       .map((line) => line.split("\t"))
       .map((cells) => [
         cells[8].split("/").at(-1),
-        { merged: cells[2], dirty: cells[3], pr: cells[5], lastChat: cells[6], bucket: cells[7] },
+        { merged: cells[2], dirty: cells[3], remote: cells[4], pr: cells[5], lastChat: cells[6], bucket: cells[7] },
       ]),
   );
 }
@@ -113,6 +113,84 @@ printf '%s' '[{"number":7,"state":"MERGED","headRefName":"shipped"},{"number":8,
     "in-review": { pr: "#8/open", lastChat: "-", bucket: "hold-open-pr" },
     "no-pr": { pr: "-", lastChat: "-", bucket: "review" },
   });
+});
+
+// gh and Origin both list a branch's PRs newest first, so a newer closed or
+// merged PR comes before an older one that is still open. gh reports a draft
+// as OPEN, and Origin reports it as draft.
+for (const [cli, open] of [["gh", "open"], ["origin", "draft"]]) {
+  test(`an older ${open} PR from ${cli} holds its worktree when a newer closed PR comes first`, () => {
+    const fixture = createFixture();
+    for (const branch of ["reopened", "superseded"]) commit(addWorktree(fixture, branch), branch);
+    const records = [
+      [14, "closed", "reopened"],
+      [13, "merged", "superseded"],
+      [12, open, "reopened"],
+      [11, "closed", "superseded"],
+    ].map(([number, state, head]) =>
+      cli === "gh"
+        ? { number, state: state.toUpperCase(), headRefName: head }
+        : { number, status: state, headRef: head },
+    );
+    writeFileSync(join(fixture.bin, cli), `#!/bin/sh\nprintf '%s' '${JSON.stringify(records)}'\n`);
+    chmodSync(join(fixture.bin, cli), 0o755);
+    const rows = runAudit(fixture);
+    expect([rows.reopened.pr, rows.reopened.bucket]).toEqual([`#12/${open}`, "hold-open-pr"]);
+    expect([rows.superseded.pr, rows.superseded.bucket]).toEqual(["#13/merged", "safe"]);
+  });
+}
+
+test("a tag named like the branch does not hide the branch's open PR", () => {
+  const fixture = createFixture();
+  commit(addWorktree(fixture, "topic"), "landed");
+  git(fixture.repo, "merge", "-q", "--ff-only", "topic");
+  git(fixture.repo, "push", "-q", "origin", "main");
+  git(fixture.repo, "tag", "topic", "topic");
+  writeFileSync(
+    join(fixture.bin, "gh"),
+    `#!/bin/sh\nprintf '%s' '[{"number":11,"state":"OPEN","headRefName":"topic"}]'\n`,
+  );
+  chmodSync(join(fixture.bin, "gh"), 0o755);
+  const { topic } = runAudit(fixture);
+  expect([topic.merged, topic.pr, topic.bucket]).toEqual(["YES", "#11/open", "hold-open-pr"]);
+});
+
+for (const kind of ["branch", "tag"]) {
+  test(`a local ${kind} named like a remote-tracking base cannot make unmerged work read as merged`, () => {
+    const fixture = createFixture();
+    commit(addWorktree(fixture, "topic"), "unmerged");
+    git(fixture.repo, "remote", "add", "upstream", join(fixture.root, "remote.git"));
+    git(fixture.repo, "fetch", "-q", "upstream");
+    for (const name of ["origin/main", "upstream/main"]) git(fixture.repo, kind, name, "topic");
+    for (const args of [[], ["-b", "origin/main"], ["-b", "upstream/main"]]) {
+      const { topic } = runAudit(fixture, ...args);
+      expect([topic.merged, topic.bucket]).toEqual(["no", "review"]);
+    }
+    for (const target of ["refs/remotes/origin/main", "refs/remotes/upstream/main"]) {
+      git(fixture.repo, "symbolic-ref", "refs/remotes/origin/HEAD", target);
+      const { topic } = runAudit(fixture);
+      expect([topic.merged, topic.bucket]).toEqual(["no", "review"]);
+    }
+  });
+}
+
+test("a local branch named origin/<branch> cannot make an unpushed commit read as pushed", () => {
+  const fixture = createFixture();
+  const topic = addWorktree(fixture, "topic");
+  commit(topic, "pushed");
+  git(topic, "push", "-q", "origin", "topic");
+  commit(topic, "local only");
+  git(fixture.repo, "branch", "origin/topic", "topic");
+  expect(runAudit(fixture).topic.remote).toBe("ahead1");
+});
+
+test("-b takes a local branch as the base", () => {
+  const fixture = createFixture();
+  commit(addWorktree(fixture, "landed"), "landed");
+  commit(addWorktree(fixture, "unmerged"), "unmerged");
+  git(fixture.repo, "merge", "-q", "--ff-only", "landed");
+  const rows = runAudit(fixture, "-b", "main");
+  expect([rows.landed.merged, rows.unmerged.merged]).toEqual(["YES", "no"]);
 });
 
 test("lists every worktree when the checkout and its worktrees sit under a path with spaces", () => {
