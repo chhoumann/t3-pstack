@@ -589,8 +589,8 @@
     {
       "files": "^skills/poteto-mode/playbooks/",
       "pattern": "Each owner is a Cursor cloud agent that builds, opens its PR",
-      "replacement": "Each owner is a `delegate_task` child with `mode: \"async\"` and `isolation: \"worktree\"` that starts from fresh trunk, per poteto-mode's Dispatch on T3. Its brief names this playbook and this thread's ID, so the owner reports back with `t3_thread_send`, and lets the owner delegate as the playbooks say. T3 gives a child no `watch_pull_request`, so the owner babysits in `drive` mode and reports a wait for a person to this thread, which watches that PR. It builds, opens its PR",
-      "rationale": "Playbooks: Autopilot-full. T3 starts a top-level thread only when the user asks for one, so each PR owner is a delegate_task child in its own T3 worktree, which task_status and task_cancel reach (#47, by @pb3975). A child is a leaf unless its brief names delegation, so the owner's brief lifts that. T3 gives a delegate_task child no watch_pull_request, so the root holds the watch an owner's wait for a person needs. Isolation starts at the root's HEAD, which need not be trunk, so the owner resets its own branch to fresh trunk"
+      "replacement": "Each owner is a `delegate_task` child with `mode: \"async\"` and `isolation: \"worktree\"` that starts from fresh trunk, per poteto-mode's Dispatch on T3. Its brief names this playbook and this thread's ID, so the owner reports back with `t3_thread_send`. It also tells the owner that it is not a leaf and starts the subagents its playbooks name, such as `/no-comments`'s Comment Sicko and show-me-your-work's cross-model review of the trail, because Dispatch on T3 makes a child a leaf unless its brief names its subagents. T3 gives a child no `watch_pull_request`, so the owner babysits in `drive` mode and reports a wait for a person to this thread, which watches that PR. It builds, opens its PR",
+      "rationale": "Playbooks: Autopilot-full. T3 starts a top-level thread only when the user asks for one, so each PR owner is a delegate_task child in its own T3 worktree, which task_status and task_cancel reach (#47, by @pb3975). A child is a leaf unless its brief names its subagents, so the owner's brief says in plain words that the owner is not a leaf and names the reviewers its playbooks start. 2.2.6 said only that the brief lets the owner delegate, and in a proof run the root wrote 'You are a leaf' into the owner's brief, so the owner ran Comment Sicko's pass itself and skipped the trail review. T3 gives a delegate_task child no watch_pull_request, so the root holds the watch an owner's wait for a person needs. Isolation starts at the root's HEAD, which need not be trunk, so the owner resets its own branch to fresh trunk"
     },
     {
       "files": "^skills/poteto-mode/playbooks/",
@@ -645,6 +645,18 @@
       "pattern": "- **Fork when new work needs a worker's built state,** such as its checkout, uncommitted changes, or a running process. Message a worker only for a follow-up on the same work.",
       "replacement": "- **Reuse a worker's worktree when new work needs its built state,** such as its checkout, uncommitted changes, or a running process. Once that worker is done, start a fresh one there instead of removing the worktree, as poteto-mode's Dispatch on T3 says for a child sent into a worktree it does not own. Message a worker, with `t3_thread_send` to its `childThreadId`, only for a follow-up on the same work.",
       "rationale": "T3 cannot fork a child. The built state lives in the worker's worktree on this machine, so a fresh delegate_task child there inherits it, and waiting until the first worker is done keeps one writer per worktree. A message to a child is t3_thread_send, which starts a new turn on an idle child as Lauren's next sentence says. a parent that made a worktree with git worktree add removes it after the result, so the sentence says to keep this one. isolation: \"worktree\" always makes a new worktree without uncommitted edits, so the reusing worker is told the path"
+    },
+    {
+      "files": "^skills/poteto-mode/playbooks/orchestrate\\.md$",
+      "pattern": "Conflicted merges, chain rebases, and fixes go to owners.",
+      "replacement": "Conflicted merges, chain rebases, and fixes go to owners. An owner's kickoff tells it that it is not a leaf and starts the subagents its playbooks name, such as `/no-comments`'s Comment Sicko, because Dispatch on T3 makes a child a leaf unless its brief names its subagents.",
+      "rationale": "an owner carries its PR from build to merge, and the playbooks it runs start reviewers of their own. poteto-mode's Dispatch on T3 makes every delegate_task child a leaf unless its brief names its subagents, so the kickoff says so, as Autopilot-full step 2's owner brief does"
+    },
+    {
+      "files": "^skills/poteto-mode/playbooks/orchestrate\\.md$",
+      "pattern": "It owns that area's workers and kickoffs and sends you one rollup, never raw worker reports.",
+      "replacement": "It owns that area's workers and kickoffs and sends you one rollup, never raw worker reports. Its kickoff tells it that it is not a leaf and starts that area's workers with `delegate_task`, because Dispatch on T3 makes a child a leaf unless its brief names its subagents.",
+      "rationale": "a sub-coordinator is a delegate_task child whose whole job is to start workers. poteto-mode's Dispatch on T3 makes every delegate_task child a leaf unless its brief names its subagents, so the kickoff says so"
     },
     {
       "files": "^skills/poteto-mode/playbooks/",
