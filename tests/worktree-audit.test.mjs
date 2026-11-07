@@ -140,18 +140,37 @@ for (const [cli, open] of [["gh", "open"], ["origin", "draft"]]) {
   });
 }
 
+test("a tag named like the branch does not hide the branch's open PR", () => {
+  const fixture = createFixture();
+  commit(addWorktree(fixture, "topic"), "landed");
+  git(fixture.repo, "merge", "-q", "--ff-only", "topic");
+  git(fixture.repo, "push", "-q", "origin", "main");
+  git(fixture.repo, "tag", "topic", "topic");
+  writeFileSync(
+    join(fixture.bin, "gh"),
+    `#!/bin/sh\nprintf '%s' '[{"number":11,"state":"OPEN","headRefName":"topic"}]'\n`,
+  );
+  chmodSync(join(fixture.bin, "gh"), 0o755);
+  const { topic } = runAudit(fixture);
+  expect([topic.merged, topic.pr, topic.bucket]).toEqual(["YES", "#11/open", "hold-open-pr"]);
+});
+
 for (const kind of ["branch", "tag"]) {
-  test(`a local ${kind} named origin/main cannot make unmerged work read as merged`, () => {
+  test(`a local ${kind} named like a remote-tracking base cannot make unmerged work read as merged`, () => {
     const fixture = createFixture();
     commit(addWorktree(fixture, "topic"), "unmerged");
-    git(fixture.repo, kind, "origin/main", "topic");
-    for (const args of [[], ["-b", "origin/main"]]) {
+    git(fixture.repo, "remote", "add", "upstream", join(fixture.root, "remote.git"));
+    git(fixture.repo, "fetch", "-q", "upstream");
+    for (const name of ["origin/main", "upstream/main"]) git(fixture.repo, kind, name, "topic");
+    for (const args of [[], ["-b", "origin/main"], ["-b", "upstream/main"]]) {
       const { topic } = runAudit(fixture, ...args);
       expect([topic.merged, topic.bucket]).toEqual(["no", "review"]);
     }
-    git(fixture.repo, "remote", "set-head", "origin", "main");
-    const { topic } = runAudit(fixture);
-    expect([topic.merged, topic.bucket]).toEqual(["no", "review"]);
+    for (const target of ["refs/remotes/origin/main", "refs/remotes/upstream/main"]) {
+      git(fixture.repo, "symbolic-ref", "refs/remotes/origin/HEAD", target);
+      const { topic } = runAudit(fixture);
+      expect([topic.merged, topic.bucket]).toEqual(["no", "review"]);
+    }
   });
 }
 
