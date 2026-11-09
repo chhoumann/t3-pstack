@@ -163,6 +163,12 @@
       "rationale": "Codex's model picks a shell read's output budget, often 3000 to 6000 tokens for a SKILL.md, and Codex 0.162.1 then cuts the middle of anything longer, which here is the Subagents section that holds the T3 dispatch rules. The head of a cut read survives, so the instruction sits there. tests/agent-skills.test.mjs keeps the file inside the 10000-token budget it names."
     },
     {
+      "pattern": "open its full steps at `playbooks/<title>.md`,",
+      "files": "^skills/poteto-mode/SKILL\\.md$",
+      "replacement": "open its full steps at `playbooks/<title>.md` from this file (`skills/poteto-mode/playbooks/<title>.md`),",
+      "rationale": "Codex agents that read a playbook in one shell call with sibling skills give it the skills/ base that `../<name>/SKILL.md` names, and open skills/playbooks/<title>.md, which does not exist (#71, by @adryanev). The path gets its base the way bundled skills do."
+    },
+    {
       "pattern": "- About to `AskQuestion` on a",
       "replacement": "- About to ask the user a question on a",
       "rationale": "the rule is about asking, not the tool",
