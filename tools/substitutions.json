@@ -636,6 +636,12 @@
     },
     {
       "files": "^skills/poteto-mode/playbooks/orchestrate\\.md$",
+      "pattern": "Call no scripts, run no polling loops, and never relay messages or status between agents.",
+      "replacement": "Call no scripts, run no polling loops, and never relay messages or status between agents. Only a child finishing and a PR watch wake this thread, so before you end a turn, start a worker for every unit that is not blocked, or write in `notes.md` why it waits and what will wake it. A turn that ends with work left and nothing running or watched stops the program. Report it to the user as a stop, never as a finished round.",
+      "rationale": "On T3 a delegate_task child's completion and watch_pull_request are the only things that wake the coordinator's thread. A coordinator that closes a round and ends its turn with unblocked units unassigned and no child or watch running stays idle until a person writes (chhoumann/t3-pstack#74: three times in one day, once for 5 h)"
+    },
+    {
+      "files": "^skills/poteto-mode/playbooks/orchestrate\\.md$",
       "pattern": "Run workers on a new cloud VM (`environment: \"cloud\"`) unless the work needs this machine: a `control-ui` or `control-cli` runtime check (from `cursor-team-kit`), local transcripts, a simulator, or auth that exists only here.",
       "replacement": "Every worker runs on this machine, and one that writes gets `isolation: \"worktree\"`, per poteto-mode's Dispatch on T3.",
       "rationale": "no cloud VMs on T3, so every delegate_task child runs locally and the exceptions Lauren lists need nothing; a writing child gets T3's worktree isolation per poteto-mode's Dispatch on T3"
