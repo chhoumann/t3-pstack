@@ -2,7 +2,7 @@
 
 **You run the program, never the code. Decide which agent does each piece of work, then check what each one produces.** For a standing project handed to one coordinator chat: multi-day, many stacked PRs, dozens to hundreds of subagents, few human turns. One task driven to a predicate is Autonomous run. One ambitious run that needs a bespoke workflow is figure-it-out. Work that one agent could finish inside the session's budget is not a program.
 
-Run it with your own tools. Spawn workers with `delegate_task`. Keep the program's state in `${XDG_STATE_HOME:-~/.local/state}/t3-pstack/orchestrate/<project-slug>/`, with the tracker in its `notes.md`. Watch each PR with `watch_pull_request` when this thread has it. It wakes this thread on failed checks, passed required checks, new comments or reviews, and conflicts. Call no scripts, run no polling loops, and never relay messages or status between agents.
+Run it with your own tools. Spawn workers with `delegate_task`. Keep the program's state in `${XDG_STATE_HOME:-~/.local/state}/t3-pstack/orchestrate/<project-slug>/`, with the tracker in its `notes.md`. Watch each PR with `watch_pull_request` when this thread has it. It wakes this thread on failed checks, passed required checks, new comments or reviews, and conflicts. Call no scripts, run no polling loops, and never relay messages or status between agents. Only a child finishing and a PR watch wake this thread, so before you end a turn, start a worker for every unit that is not blocked, or write in `notes.md` why it waits and what will wake it. A turn that ends with work left and nothing running or watched stops the program. Report it to the user as a stop, never as a finished round.
 
 #### Topology
 
