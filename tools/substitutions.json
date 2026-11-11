@@ -671,16 +671,22 @@
       "files": "^skills/poteto-mode/playbooks/"
     },
     {
+      "files": "^skills/poteto-mode/playbooks/babysit\\.md$",
+      "pattern": "6. **Trust the active forge's verdict, not a green check list.** Ready means the forge agrees the PR can merge.",
+      "replacement": "6. **Choose the wait transport before checking the merge frontier.** Ready means the active forge permits the PR to merge; the review and Shipping gates still apply.\n\n   **In T3 with native PR tools:** `drive` and `background` retain ownership across turns. Read the frontier's current checks, reviews and merge blockers once. Fix local code when a concrete failure needs work. When only CI or review remains, arm `watch_pull_request` if the frontier is not already watched, then end the turn with a checkpoint: PR, head SHA, verified work, pending checks and next action. A checkpoint is not goal completion. Leave the watch armed across pushes and wakes. Read current readiness on wake and act on its cause. Do not run a blocking CLI watcher, `--watch`, `sleep` or a polling loop in a T3 turn. Delegated children return the checkpoint to their existing coordinator; only that coordinator owns the watch. A stopped or approval-pending owner stays stopped.\n\n   **Without native PR tools:** Trust the active forge's verdict, not a green check list. Ready means the forge agrees the PR can merge.",
+      "rationale": "Playbooks: Babysit step 6 splits the wait by surface. On T3, watch_pull_request wakes the thread on checks, reviews and comments, so a 540-second watcher inside the turn only blocks the native monitor wakes; the agent checks once, arms the watch and ends the turn with a checkpoint. Without native PR tools the turn keeps the CLI watcher loop. A delegate_task child has no watch_pull_request, so it hands the checkpoint back to the coordinator that owns the watch"
+    },
+    {
       "pattern": "In `check` mode pass `--status-only`.",
       "replacement": "In `check` mode pass `--status-only --timeout 120 --max-query-errors 2`, which returns inside the 600-second tool cap.",
       "rationale": "Playbooks: Babysit check",
       "files": "^skills/poteto-mode/playbooks/"
     },
     {
+      "files": "^skills/poteto-mode/playbooks/babysit\\.md$",
       "pattern": "Run `drive` and `background` under `/loop` in dynamic mode.",
-      "replacement": "Run `drive` as a loop inside the turn: run the watcher with `--timeout 540` and the shell's own timeout above 540 seconds and under the 600-second tool cap, act on its verdict, and run it again. Report and stop when the verdict's head SHA, kind, and reason have not changed for two hours, or after three hours in all. A `BLOCKER` with reason `review-required` or `merge-blocked` (exit 6) needs a person, so report it and stop the loop instead of rerunning the watcher. `review-required` is the wait for a human review below, and `merge-blocked`, a branch protection rule the watcher cannot name, goes back to the user. Run `background` by arming T3's `watch_pull_request` on the frontier and taking the watcher's verdict with `--timeout 180` at each natural pause. A wait for a human review is `watch_pull_request` and the end of the turn, because another account's review wakes the thread. Unwatch with `unwatch_pull_request` when babysitting stops. The watcher holds `READY` until accounts other than the PR author and the `gh` viewer have been quiet on the PR for `--settle` seconds (default 300) since the latest push, opening, or ready for review, and up to 30 minutes after that while an `eyes` reaction is open, so no per-bot wait rules are needed.",
-      "rationale": "Playbooks: Babysit drive and background; the watch-pr settle overlay (t3-pstack 1.0.5); the exit 6 merge gates from pstack-claude #95 (t3-pstack 2.0.0-rc.2)",
-      "files": "^skills/poteto-mode/playbooks/"
+      "replacement": "Run `drive` as a loop inside the turn: run the watcher with `--timeout 540` and the shell's own timeout above 540 seconds and under the 600-second tool cap, act on its verdict, and run it again. Report and stop when the verdict's head SHA, kind, and reason have not changed for two hours, or after three hours in all. A `BLOCKER` with reason `review-required` or `merge-blocked` (exit 6) needs a person, so report it and stop the loop instead of rerunning the watcher. `review-required` is the wait for a human review below, and `merge-blocked`, a branch protection rule the watcher cannot name, goes back to the user. A human-review wait is a checkpoint for the owner; do not keep a CLI loop open while only that approval is missing. The watcher holds `READY` until accounts other than the PR author and the `gh` viewer have been quiet on the PR for `--settle` seconds (default 300) since the latest push, opening, or ready for review, and up to 30 minutes after that while an `eyes` reaction is open, so no per-bot wait rules are needed.",
+      "rationale": "Playbooks: Babysit drive without native PR tools; the watch-pr settle overlay (t3-pstack 1.0.5); the exit 6 merge gates from pstack-claude #95 (t3-pstack 2.0.0-rc.2). The native watch_pull_request path moved into step 6's own split, and only babysit.md carries this sentence upstream"
     },
     {
       "pattern": "status comes from `scripts/watch-pr/watch-pr`.",
@@ -693,6 +699,12 @@
       "pattern": "(`scripts/watch-pr/watch-pr --queued-stack --stack-prs <bottom-to-top>`) under `/loop` until it reports `COMPLETE` at the ceiling.",
       "replacement": "(`<plugin root>/skills/poteto-mode/scripts/watch-pr/watch-pr --queued-stack --stack-prs <bottom-to-top>`) as a loop inside the turn until it reports `COMPLETE` at the ceiling. Run it with `--timeout 540` and the shell's own timeout above 540 seconds and under the 600-second tool cap, check the ceiling after each return, and report and stop after three hours. `watch_pull_request` cannot stand in here, because it does not wake on a merge or on merge-queue state.",
       "rationale": "Playbooks: Shipping (the watcher loops inside the turn); a skill-relative path does not resolve from the project directory"
+    },
+    {
+      "files": "^skills/poteto-mode/playbooks/shipping\\.md$",
+      "pattern": "verdict or not. On GitHub, watch the run with the queued watcher from `playbooks/babysit.md`",
+      "replacement": "verdict or not.\n\n   **In T3 with native PR tools:** re-read the current forge state once after each merge command. If the merge landed, continue step 4 on the next verified PR. If only external checks or review remain, use Babysit's native watch and checkpoint contract, then end the turn. Keep the frozen run and its ceiling in that checkpoint. Delegated children return it to their existing coordinator. A native PR watch does not wake on merge or merge-queue state alone. Record that limitation and the existing coordinator's continuation contract when parking on that condition. Do not claim an automatic continuation that has not been armed. Never keep a T3 turn open with a blocking watcher, `--watch`, `sleep` or a polling loop.\n\n   **Without native PR tools:** On GitHub, watch the run with the queued watcher from `playbooks/babysit.md`",
+      "rationale": "Playbooks: Shipping step 5 splits the landing wait by surface. On T3 a merge can land between watcher polls, so the agent re-reads the forge once per merge command and parks on Babysit's watch_pull_request checkpoint; a native watch does not wake on a merge, and the rule says so instead of claiming a wake it cannot arm. Without native PR tools the turn keeps the queued watcher loop the next rule carries"
     },
     {
       "pattern": "run `scripts/worktree-audit.sh",
