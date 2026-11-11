@@ -172,7 +172,9 @@ describe("applySubstitutions", () => {
   test.each([
     ["skills/poteto-mode/SKILL.md", "Interrupt-chained resumes silently drop directives, so fire a fresh subagent with consolidated scope rather than trusting a \"done\" summary.", ["**Dispatch on T3.**", "dispatch ledger", "`BLOCKED: independent review`", "`clientRequestId`", "you are a leaf", "`isolation: \"worktree\"`", "`Unable to resolve the parent checkout commit`"]],
     ["skills/arena/SKILL.md", "With the default pool, a Claude parent gets `grok-4.7-xhigh-fast`. A parent from any other family gets `claude-opus-5-5-xhigh` first.", ["no model scores its own work"]],
-    ["skills/poteto-mode/playbooks/babysit.md", "Run `drive` and `background` under `/loop` in dynamic mode.", ["--timeout 540", "watch_pull_request", "--settle"]],
+    ["skills/poteto-mode/playbooks/babysit.md", "Run `drive` and `background` under `/loop` in dynamic mode.", ["--timeout 540", "--settle", "checkpoint for the owner", "`background` makes one bounded status pass"]],
+    ["skills/poteto-mode/playbooks/babysit.md", "6. **Trust the active forge's verdict, not a green check list.** Ready means the forge agrees the PR can merge.", ["**In T3 with native PR tools:**", "arm `watch_pull_request`", "**Without native PR tools:**", "checkpoint", "unwatch_pull_request", "no supported native watch"]],
+    ["skills/poteto-mode/playbooks/shipping.md", "verdict or not. On GitHub, watch the run with the queued watcher from `playbooks/babysit.md`", ["**In T3 with native PR tools:**", "**Without native PR tools:**", "checkpoint", "blocking watcher"]],
     ["skills/poteto-mode/playbooks/autopilot-full.md", "Each owner is a Cursor cloud agent that builds, opens its PR", ["`delegate_task` child", "`isolation: \"worktree\"`", "t3_thread_send"]],
     ["skills/no-comments/SKILL.md", '1. Spawn `Task` with `subagent_type: "comment-sicko"`. Pass the scope.', ["<plugin root>/agents/comment-sicko.md", "no worktree"]],
   ])("%s keeps its T3 insert", (rel, upstream, needles) => {

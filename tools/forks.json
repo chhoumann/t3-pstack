@@ -20,7 +20,7 @@
     },
     "plugins/pstack/skills/poteto-mode/playbooks/shipping.md": {
       "kind": "policy",
-      "why": "Adds --match-head-commit <head> to the GitHub merge in step 4, the head guard from Michael Denyer's pstack-claude, with the current head whose verdict survives step 3's patch-id rule, so a head pushed after that check cannot land, and stops step 5's watcher loop at a merge gate that needs a person.",
+      "why": "Adds --match-head-commit <head> to the GitHub merge in step 4, the head guard from Michael Denyer's pstack-claude, with the current head whose verdict survives step 3's patch-id rule, so a head pushed after that check cannot land, and stops step 5's watcher loop at a merge gate that needs a person. Step 5 also splits its landing wait by surface, a paragraph break upstream's flat sentence cannot carry, so the fork keeps the split text while tools/substitutions.json carries the same paragraphs for the derived shadow the next merge diffs against.",
       "since": "2.0.0-rc.2",
       "upstream": "not-proposed"
     },
