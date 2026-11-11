@@ -2,6 +2,16 @@
 
 This file is the release changelog, with one `## <version> - <title>` entry per release, newest first. The Cursor-to-T3 rewrite rules live in [`tools/substitutions.json`](tools/substitutions.json), and the [sync boundary](CONTRIBUTING.md#the-sync-boundary) in `CONTRIBUTING.md` defines how a change to upstream's skill content is declared.
 
+## 2.2.9 - Babysit and Shipping wait on T3's native PR watch instead of a watcher loop inside the turn
+
+2.2.8's Babysit step 6 told `drive` to run the watch-pr CLI watcher with `--timeout 540` as a loop inside the turn, and Shipping step 5 told the landing wait the same. On T3 that holds a shell tool call open for minutes at a time while the thread's own `watch_pull_request` wakes sit blocked behind the turn. A `background` babysit armed `watch_pull_request` but still sampled the CLI watcher at each pause, and Shipping kept its queued watcher open for up to three hours when only a merge or review remained.
+
+Both steps now split the wait by surface. In T3 with native PR tools the agent reads the frontier's checks, reviews and merge blockers once, fixes what needs work, arms `watch_pull_request` on the frontier, and ends the turn with a checkpoint naming the PR, head SHA, verified work, pending checks and next action. The watch stays armed across pushes and wakes, and a delegated child hands the checkpoint back to the coordinator that owns the watch, because `delegate_task` children get no `watch_pull_request`. Without native PR tools both steps keep the CLI watcher loop with its 540-second runs, the two-hour unchanged-verdict stop, and the exit 6 merge gates. Shipping's split also records in plain words that a native watch does not wake on a merge or merge-queue state alone, so nothing claims a parked continuation it cannot arm.
+
+Babysit's step 6 stays a derived file: one substitution rewrites its heading into the split and the without-native lead, and the existing `check`-mode, plugin-root, and drive rules rewrite the paragraph inside it. The drive rule's replacement drops the `watch_pull_request` recipe that belonged to the native branch and adds that a human-review wait is a checkpoint, and the rule is now scoped to `babysit.md`, the only file that carries the sentence upstream. Shipping is a declared fork for `--match-head-commit` and the exit-6 stop, so its step 5 carries the same split in the file, and a substitution writes it into the derived shadow the next merge diffs against. `tests/sync.test.mjs` gains an entry for each new anchor.
+
+This release syncs nothing from Lauren's pstack, so all three components stay pinned at cursor/plugins `c742dd6`. At that pin each component's dry run reports no undeclared fork and no substitution that matches nothing. Neither hooks file changes. This is a patch release, and no setting or workflow has to change. On Codex, run `npx -y github:chhoumann/t3-pstack update` after it, as after every release.
+
 ## 2.2.8 - The worktree audit reads git refs by their full name and holds a branch's open PR
 
 The worktree audit marks a worktree `safe` to prune when its HEAD is merged into the base or its branch has a PR that is not open. Three lookups could read unmerged or open work as safe.
