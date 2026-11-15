@@ -550,7 +550,7 @@
     },
     {
       "pattern": "Read this run's transcript under the active workspace's `agent-transcripts/` directory (the system prompt names the path). Don't glob across `~/.cursor/projects/*/`. That reads unrelated private chats.",
-      "replacement": "Read this run's thread with `t3_thread_read` (`t3_thread_configuration` with no `threadId` returns its ID), and each child's thread by its `childThreadId`. Don't read other projects' threads. That reads unrelated private chats.",
+      "replacement": "Read this run's thread with `t3_thread_read` (`t3_thread_configure` with no `threadId` returns its ID), and each child's thread by its `childThreadId`. Don't read other projects' threads. That reads unrelated private chats.",
       "rationale": "Per-skill notes: show-me-your-work"
     },
     {
