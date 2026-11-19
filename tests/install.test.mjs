@@ -15,6 +15,7 @@ import {
   readdirSync,
   readFileSync,
   readlinkSync,
+  renameSync,
   realpathSync,
   rmSync,
   statSync,
@@ -846,6 +847,73 @@ describe("Antigravity", () => {
     expect(doctorAntigravity(home, agy(user)).every((c) => c.ok)).toBe(true);
   });
 
+  test("never replaces a live ~/.gemini/t3-pstack link, which leads to someone's own tree", () => {
+    const user = tmp();
+    const home = antigravityHome(user);
+    const theirs = join(user, "checkout");
+    cpSync(pluginRoot, theirs, { recursive: true });
+    mkdirSync(join(user, ".gemini"));
+    symlinkSync(theirs, canonicalAt(user));
+    expect(() => installAntigravity(home, agy(user))).toThrow(`${canonicalAt(user)} is not t3-pstack's; move it aside`);
+    expect(readlinkSync(canonicalAt(user))).toBe(theirs);
+    expect(doctorAntigravity(home, agy(user))[0]).toMatchObject({ name: "installed", ok: false });
+  });
+
+  test("doctor fails a copy whose hook script is missing or whose files are directories, and install restores them", () => {
+    const user = tmp();
+    const home = antigravityHome(user);
+    installAntigravity(home, agy(user));
+    const breakIt = [
+      () => rmSync(join(canonicalAt(user), "hooks/session-start.sh")),
+      () => {
+        rmSync(join(canonicalAt(user), "hooks.json"));
+        mkdirSync(join(canonicalAt(user), "hooks.json"));
+      },
+      () => {
+        rmSync(join(canonicalAt(user), "agents/poteto-agent.md"));
+        mkdirSync(join(canonicalAt(user), "agents/poteto-agent.md"));
+      },
+    ];
+    for (const broken of breakIt) {
+      broken();
+      expect(doctorAntigravity(home, agy(user))[0]).toMatchObject({ ok: false, detail: `${shipped}, but its files at ${canonicalAt(user)} are missing` });
+      expect(installAntigravity(home, agy(user))).toEqual([`reinstalled ${shipped}, whose files were missing`]);
+      expect(doctorAntigravity(home, agy(user)).every((c) => c.ok)).toBe(true);
+    }
+  });
+
+  test("leaves an unrecognized leftover in config/plugins for the user, and doctor keeps reporting it", () => {
+    const user = tmp();
+    const home = antigravityHome(user);
+    installAntigravity(home, agy(user));
+    const leftover = join(home.dir, "config/plugins/.t3-pstack.0b0e4bd4-3f6e-4c39-9f4f-6a2b1c7d9e02.t3-pstack.tmp");
+    writeJson(join(leftover, ".antigravity-plugin/plugin.json"), { name: "someone-else" });
+    writeFileSync(join(leftover, "notes.md"), "mine\n");
+    expect(installAntigravity(home, agy(user))).toEqual([]);
+    expect(readFileSync(join(leftover, "notes.md"), "utf8")).toBe("mine\n");
+    expect(doctorAntigravity(home, agy(user))[1]).toMatchObject({ name: "linked", ok: false });
+  });
+
+  test("keeps an interrupted swap's staged copies in ~/.gemini until a whole copy is in place", () => {
+    const user = tmp();
+    const home = antigravityHome(user);
+    installAntigravity(home, agy(user));
+    // Stopped after the old copy moved aside and before the new one moved in.
+    const staged = join(user, ".gemini/.t3-pstack.0b0e4bd4-3f6e-4c39-9f4f-6a2b1c7d9e03.t3-pstack.tmp");
+    renameSync(canonicalAt(user), staged);
+    const spy = spyOn(fs, "cpSync").mockImplementation(() => {
+      throw Object.assign(new Error("ENOSPC: no space left on device"), { code: "ENOSPC" });
+    });
+    try {
+      expect(() => installAntigravity(home, agy(user))).toThrow("ENOSPC");
+    } finally {
+      spy.mockRestore();
+    }
+    expect(existsSync(join(staged, ".antigravity-plugin/plugin.json"))).toBe(true);
+    expect(installAntigravity(home, agy(user))).toEqual([`installed ${shipped}`, `removed ${staged}, left by an interrupted install`]);
+    expect(doctorAntigravity(home, agy(user)).every((c) => c.ok)).toBe(true);
+  });
+
   test("leaves the user's own links at a shipped skill, under its name relative or under another name", () => {
     const user = tmp();
     const home = antigravityHome(user);
@@ -937,6 +1005,8 @@ describe("Antigravity", () => {
     expect(samePath("D:\\x\\skills\\how", "C:\\x\\skills\\how", win32)).toBe(false);
     expect(samePath("C:\\x\\skills\\how", "C:\\x\\skills\\why", win32)).toBe(false);
     expect(samePath("/a/B", "/a/b")).toBe(false);
+    expect(samePath("/a/link/../b", "/a/b")).toBe(false);
+    expect(samePath("/a/b/", "/a/b")).toBe(true);
   });
 
   test("the installer CLI installs into each Antigravity profile under HOME, with no claude or codex on PATH", () => {

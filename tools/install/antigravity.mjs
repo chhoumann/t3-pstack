@@ -10,7 +10,7 @@
 // root> at <profile>/config, whose agents/ is linked too. `agy plugin
 // install` writes ~/.gemini whatever GEMINI_HOME says, so the installer makes
 // the copy and links itself.
-import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readlinkSync, renameSync, rmdirSync, rmSync, symlinkSync, unlinkSync } from "node:fs";
+import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readlinkSync, renameSync, rmdirSync, rmSync, statSync, symlinkSync, unlinkSync } from "node:fs";
 import path, { dirname, join, relative, sep } from "node:path";
 
 import { check, pluginIntact, readJson, tempBeside } from "./common.mjs";
@@ -31,8 +31,14 @@ const enabled = (home) => {
 // A link's target as readlink gives it, without the `\\?\` prefix Windows
 // puts on a junction's.
 export const normalizeLink = (raw) => (raw.startsWith("\\\\?\\UNC\\") ? `\\\\${raw.slice(8)}` : raw.startsWith("\\\\?\\") ? raw.slice(4) : raw);
-// Equal as the platform compares paths, so ignoring case on win32.
-export const samePath = (a, b, p = path) => p.relative(a, b) === "";
+// The same spelling, as the platform compares names: ignoring case on win32,
+// and a trailing separator anywhere. `..` is not resolved, since a link through
+// another symlink and back can spell the target and lead elsewhere.
+export function samePath(a, b, p = path) {
+  const win = p.sep === "\\";
+  const trim = (s) => s.replace(win ? /[\\/]+$/ : /\/+$/, "");
+  return win ? trim(a).toLowerCase() === trim(b).toLowerCase() : trim(a) === trim(b);
+}
 // A symlink whose own text names `target`. A relative link never does.
 function linksTo(file, target) {
   const raw = normalizeLink(readlinkSync(file));
@@ -109,22 +115,24 @@ function converge(row, profile) {
   return before;
 }
 
-// absent, link (any symlink, dangling or not), ours, or foreign.
+// absent, link (a dangling symlink), ours, or foreign. A live symlink leads
+// to someone's own tree, so it is theirs.
 function canonicalState(dir) {
   const stat = lstatSync(dir, { throwIfNoEntry: false });
   if (!stat) return "absent";
-  if (stat.isSymbolicLink()) return "link";
+  if (stat.isSymbolicLink()) return existsSync(dir) ? "foreign" : "link";
   return stat.isDirectory() && ours(dir) ? "ours" : "foreign";
 }
 
 const installedVersion = (dir) => (canonicalState(dir) === "ours" ? readJson(join(dir, ANTIGRAVITY_MANIFEST)).version : undefined);
 
-// The copy has every file a session reads: the manifest, each skill, the hook
-// file agy runs, and each agent the plugin ships.
+// The copy has every file a session reads, each as a file: the manifest, each
+// skill, the hook file agy runs and the scripts under hooks/, and each agent.
+const isFile = (file) => statSync(file, { throwIfNoEntry: false })?.isFile() === true;
 const intact = (dir, { pluginRoot, skills }) =>
   pluginIntact(dir, ANTIGRAVITY_MANIFEST, skills) &&
-  existsSync(join(dir, "hooks.json")) &&
-  readdirSync(join(pluginRoot, "agents")).every((file) => existsSync(join(dir, "agents", file)));
+  isFile(join(dir, "hooks.json")) &&
+  ["hooks", "agents"].every((sub) => readdirSync(join(pluginRoot, sub)).every((file) => isFile(join(dir, sub, file))));
 
 // The canonical copy, swapped in whole by rename, so a session never loads
 // half a plugin and files a release dropped do not linger.
@@ -166,12 +174,15 @@ export function installAntigravity(home, context) {
   const { userHome, skills } = context;
   // T3 creates the profile private, and keeps it so when it starts the instance.
   mkdirSync(home.dir, { recursive: true, mode: 0o700 });
-  const steps = [];
-  for (const path of [join(home.dir, "config", "plugins"), home.dir, join(userHome, ".gemini")].flatMap(leftovers)) {
+  // The copy goes in before any leftover goes, so an interrupted swap's staged
+  // copies stay until a whole one is in place. Under config/plugins/, only a
+  // copy of this plugin goes: anything else there is reported, not deleted.
+  const steps = installCanonical(canonicalPath(userHome), context);
+  const stale = [...leftovers(join(home.dir, "config", "plugins")).filter(ours), ...[home.dir, join(userHome, ".gemini")].flatMap(leftovers)];
+  for (const path of stale) {
     rmSync(path, { recursive: true, force: true });
     steps.push(`removed ${path}, left by an interrupted install`);
   }
-  steps.push(...installCanonical(canonicalPath(userHome), context));
   const changed = links(home, userHome, [...skills.keys()])
     .map((row) => ({ ...row, before: converge(row, home.dir) }))
     .filter((row) => row.before);
