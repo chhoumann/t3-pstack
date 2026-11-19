@@ -626,67 +626,179 @@ describe("the model sheet", () => {
 });
 
 // An Antigravity profile as T3 leaves it after a first start, holding agy's
-// own config and no plugin.
-function antigravityHome() {
-  const dir = tmp();
+// own config and no plugin, inside a fake user home.
+const users = new Map();
+function antigravityHome(user = tmp()) {
+  const dir = join(user, ".t3/userdata/providers/antigravity", `p${users.size}`);
+  users.set(dir, user);
   writeJson(join(dir, "config/config.json"), { plugins: { swarm: { enabled: true } } });
   return { harness: "antigravity", dir, from: ["T3 instance antigravity"], bin: null };
 }
 const pluginRoot = join(repoRoot, "plugins/pstack");
 const shipped = JSON.parse(readFileSync(join(pluginRoot, ".antigravity-plugin/plugin.json"), "utf8")).version;
-const agy = { pluginRoot, version: shipped, skills, hint: FIX };
-const installedAt = (home) => join(home.dir, "config/plugins/t3-pstack");
+const agy = (user) => ({ pluginRoot, version: shipped, skills, hint: FIX, userHome: user });
+const canonicalAt = (user) => join(user, ".gemini/t3-pstack");
+const userSkillsAt = (user) => join(user, ".gemini/config/skills");
+// What a skill's path resolves to, as Antigravity dedupes it.
+const real = (path) => realpathSync(path);
+const linked = (home, user) => ({
+  skills: real(join(home.dir, "config/skills")),
+  plugin: real(join(home.dir, "config/plugins/t3-pstack")),
+  agents: real(join(home.dir, "config/agents")),
+  how: real(join(home.dir, "config/skills/how/SKILL.md")),
+  pluginHow: real(join(home.dir, "config/plugins/t3-pstack/skills/how/SKILL.md")),
+  canonical: real(canonicalAt(user)),
+});
 
 describe("Antigravity", () => {
-  test("copies the plugin into the profile, where agy discovers it, and a second run changes nothing", () => {
-    const home = antigravityHome();
-    expect(installAntigravity(home, agy)).toEqual([`installed ${shipped}`]);
+  test("installs one copy, links it where T3 lists skills and agy loads the plugin, and a second run changes nothing", () => {
+    const user = tmp();
+    const home = antigravityHome(user);
+    const steps = installAntigravity(home, agy(user));
+    expect(steps).toEqual([
+      `installed ${shipped}`,
+      `linked 2 skills in ${userSkillsAt(user)}`,
+      `linked ${join(home.dir, "config/skills")}`,
+      `linked ${join(home.dir, "config/plugins/t3-pstack")}`,
+      `linked ${join(home.dir, "config/agents")}`,
+    ]);
     for (const file of ["hooks.json", ".antigravity-plugin/plugin.json", "hooks/session-start.sh", "skills/poteto-mode/SKILL.md"]) {
-      expect(readFileSync(join(installedAt(home), file))).toEqual(readFileSync(join(pluginRoot, file)));
+      expect(readFileSync(join(canonicalAt(user), file))).toEqual(readFileSync(join(pluginRoot, file)));
     }
-    expect(installAntigravity(home, agy)).toEqual([]);
-    expect(readdirSync(join(home.dir, "config/plugins"))).toEqual(["t3-pstack"]);
-    expect(doctorAntigravity(home, agy)).toEqual([
+    const paths = linked(home, user);
+    expect(paths).toEqual({
+      skills: userSkillsAt(user),
+      plugin: canonicalAt(user),
+      agents: join(canonicalAt(user), "agents"),
+      how: join(canonicalAt(user), "skills/how/SKILL.md"),
+      pluginHow: join(canonicalAt(user), "skills/how/SKILL.md"),
+      canonical: canonicalAt(user),
+    });
+    expect(readdirSync(userSkillsAt(user)).sort()).toEqual(["how", "why"]);
+    expect(installAntigravity(home, agy(user))).toEqual([]);
+    expect(doctorAntigravity(home, agy(user))).toEqual([
       { name: "installed", ok: true, detail: shipped },
+      { name: "linked", ok: true, detail: "config/skills, config/plugins/t3-pstack, config/agents" },
       { name: "enabled", ok: true, detail: "yes" },
+      { name: "T3 skills list", ok: true, detail: `2 skills in ${userSkillsAt(user)}` },
     ]);
   });
 
-  test("replaces an older copy whole, so a file the release dropped goes with it", () => {
-    const home = antigravityHome();
-    installAntigravity(home, agy);
-    writeJson(join(installedAt(home), ".antigravity-plugin/plugin.json"), { name: "t3-pstack", version: "2.3.0" });
-    writeFileSync(join(installedAt(home), "dropped.md"), "gone in this release\n");
-    expect(doctorAntigravity(home, agy)[0]).toEqual({ name: "installed", ok: false, detail: `2.3.0, expected ${shipped}`, fix: FIX });
-    expect(installAntigravity(home, agy)).toEqual([`updated 2.3.0 to ${shipped}`]);
-    expect(existsSync(join(installedAt(home), "dropped.md"))).toBe(false);
+  test("two profiles share one copy, and the second install only links its own profile", () => {
+    const user = tmp();
+    const first = antigravityHome(user);
+    const second = antigravityHome(user);
+    installAntigravity(first, agy(user));
+    expect(installAntigravity(second, agy(user))).toEqual(
+      ["config/skills", "config/plugins/t3-pstack", "config/agents"].map((p) => `linked ${join(second.dir, p)}`),
+    );
+    expect(linked(second, user)).toEqual(linked(first, user));
+    expect(readdirSync(join(user, ".gemini")).sort()).toEqual(["config", "t3-pstack"]);
+    for (const home of [first, second]) expect(installAntigravity(home, agy(user))).toEqual([]);
+  });
+
+  test("replaces the copy an earlier installer put in the profile with a link", () => {
+    const user = tmp();
+    const home = antigravityHome(user);
+    const old = join(home.dir, "config/plugins/t3-pstack");
+    cpSync(pluginRoot, old, { recursive: true });
+    writeJson(join(old, ".antigravity-plugin/plugin.json"), { name: "t3-pstack", version: "2.5.0" });
+    expect(doctorAntigravity(home, agy(user))[1]).toMatchObject({ name: "linked", ok: false, fix: FIX });
+    expect(installAntigravity(home, agy(user))).toContain(`linked ${old}, replacing its copy`);
+    expect(lstatSync(old).isSymbolicLink()).toBe(true);
+    expect(real(old)).toBe(canonicalAt(user));
     expect(readdirSync(join(home.dir, "config/plugins"))).toEqual(["t3-pstack"]);
+    expect(doctorAntigravity(home, agy(user)).every((c) => c.ok)).toBe(true);
+  });
+
+  test("leaves the user's own skill of the same name alone, and doctor names it", () => {
+    const user = tmp();
+    const home = antigravityHome(user);
+    const mine = join(userSkillsAt(user), "how");
+    mkdirSync(mine, { recursive: true });
+    writeFileSync(join(mine, "SKILL.md"), "my own how\n");
+    installAntigravity(home, agy(user));
+    expect(readFileSync(join(mine, "SKILL.md"), "utf8")).toBe("my own how\n");
+    expect(lstatSync(mine).isSymbolicLink()).toBe(false);
+    expect(real(join(userSkillsAt(user), "why"))).toBe(join(canonicalAt(user), "skills/why"));
+    expect(installAntigravity(home, agy(user))).toEqual([]);
+    expect(doctorAntigravity(home, agy(user))[3]).toEqual({
+      name: "T3 skills list",
+      ok: false,
+      detail: `your own how in ${userSkillsAt(user)} hides the plugin's`,
+      fix: `rename or remove your own how in ${userSkillsAt(user)}, then ${FIX}`,
+    });
+  });
+
+  test("leaves a link of the user's that points elsewhere, and doctor fails it", () => {
+    const user = tmp();
+    const home = antigravityHome(user);
+    const elsewhere = tmp();
+    mkdirSync(join(home.dir, "config"), { recursive: true });
+    symlinkSync(elsewhere, join(home.dir, "config/agents"));
+    installAntigravity(home, agy(user));
+    expect(readlinkSync(join(home.dir, "config/agents"))).toBe(elsewhere);
+    expect(doctorAntigravity(home, agy(user))[1]).toEqual({
+      name: "linked",
+      ok: false,
+      detail: `${join(home.dir, "config/agents")} is not a link into the plugin`,
+      fix: `move ${join(home.dir, "config/agents")} aside, then ${FIX}`,
+    });
+  });
+
+  test("removes the link of a skill the release dropped, and only that one", () => {
+    const user = tmp();
+    const home = antigravityHome(user);
+    installAntigravity(home, agy(user));
+    const dropped = join(userSkillsAt(user), "retired");
+    symlinkSync(join(canonicalAt(user), "skills/retired"), dropped);
+    const other = join(userSkillsAt(user), "elsewhere");
+    symlinkSync(tmp(), other);
+    expect(installAntigravity(home, agy(user))).toEqual([`removed ${dropped}, a skill this release dropped`]);
+    expect(existsSync(dropped) || lstatSync(dropped, { throwIfNoEntry: false })).toBeFalsy();
+    expect(lstatSync(other).isSymbolicLink()).toBe(true);
+  });
+
+  test("replaces an older copy whole, so a file the release dropped goes with it", () => {
+    const user = tmp();
+    const home = antigravityHome(user);
+    installAntigravity(home, agy(user));
+    writeJson(join(canonicalAt(user), ".antigravity-plugin/plugin.json"), { name: "t3-pstack", version: "2.3.0" });
+    writeFileSync(join(canonicalAt(user), "dropped.md"), "gone in this release\n");
+    expect(doctorAntigravity(home, agy(user))[0]).toEqual({ name: "installed", ok: false, detail: `2.3.0, expected ${shipped}`, fix: FIX });
+    expect(installAntigravity(home, agy(user))).toEqual([`updated 2.3.0 to ${shipped}`]);
+    expect(existsSync(join(canonicalAt(user), "dropped.md"))).toBe(false);
+    expect(readdirSync(join(user, ".gemini")).sort()).toEqual(["config", "t3-pstack"]);
+    expect(readFileSync(join(home.dir, "config/skills/how/SKILL.md"), "utf8")).toBe(SKILL("how"));
   });
 
   test("reinstalls a copy whose skills are missing", () => {
-    const home = antigravityHome();
-    installAntigravity(home, agy);
-    rmSync(join(installedAt(home), "skills/how"), { recursive: true });
-    expect(doctorAntigravity(home, agy)[0]).toMatchObject({ ok: false, detail: `${shipped}, but its files at ${installedAt(home)} are missing` });
-    expect(installAntigravity(home, agy)).toEqual([`reinstalled ${shipped}, whose files were missing`]);
-    expect(existsSync(join(installedAt(home), "skills/how/SKILL.md"))).toBe(true);
+    const user = tmp();
+    const home = antigravityHome(user);
+    installAntigravity(home, agy(user));
+    rmSync(join(canonicalAt(user), "skills/how"), { recursive: true });
+    expect(doctorAntigravity(home, agy(user))[0]).toMatchObject({ ok: false, detail: `${shipped}, but its files at ${canonicalAt(user)} are missing` });
+    expect(installAntigravity(home, agy(user))).toEqual([`reinstalled ${shipped}, whose files were missing`]);
+    expect(existsSync(join(home.dir, "config/skills/how/SKILL.md"))).toBe(true);
   });
 
   test("creates a profile T3 has not started yet, private as T3 keeps it", () => {
-    const home = { harness: "antigravity", dir: join(tmp(), "providers/antigravity/abc"), from: [], bin: null };
-    expect(installAntigravity(home, agy)).toEqual([`installed ${shipped}`]);
+    const user = tmp();
+    const home = { harness: "antigravity", dir: join(user, "providers/antigravity/abc"), from: [], bin: null };
+    expect(installAntigravity(home, agy(user))[0]).toBe(`installed ${shipped}`);
     expect(mode(home.dir)).toBe(0o700);
-    expect(doctorAntigravity(home, agy).every((c) => c.ok)).toBe(true);
+    expect(doctorAntigravity(home, agy(user)).every((c) => c.ok)).toBe(true);
   });
 
   test("doctor fails a plugin the profile's config turns off, and never edits that config", () => {
-    const home = antigravityHome();
-    installAntigravity(home, agy);
+    const user = tmp();
+    const home = antigravityHome(user);
+    installAntigravity(home, agy(user));
     const config = join(home.dir, "config/config.json");
     writeJson(config, { plugins: { "t3-pstack": { enabled: false } } });
-    expect(installAntigravity(home, agy)).toEqual([]);
+    expect(installAntigravity(home, agy(user))).toEqual([]);
     expect(JSON.parse(readFileSync(config, "utf8"))).toEqual({ plugins: { "t3-pstack": { enabled: false } } });
-    expect(doctorAntigravity(home, agy)[1]).toEqual({
+    expect(doctorAntigravity(home, agy(user))[2]).toEqual({
       name: "enabled",
       ok: false,
       detail: `no, ${config} turns it off`,
@@ -694,7 +806,7 @@ describe("Antigravity", () => {
     });
   });
 
-  test("the installer CLI installs into each Antigravity profile, with no claude or codex on PATH", () => {
+  test("the installer CLI installs into each Antigravity profile under HOME, with no claude or codex on PATH", () => {
     const user = tmp();
     const bin = join(user, "bin");
     mkdirSync(bin);
@@ -712,10 +824,17 @@ describe("Antigravity", () => {
     const profile = antigravityProfile(settings, "antigravity");
     const row = (report) => report.homes.find((h) => h.harness === "antigravity");
     const first = run("install");
-    expect(row(first)).toMatchObject({ dir: profile, steps: [`installed ${shipped}`] });
+    const all = readdirSync(join(pluginRoot, "skills")).length;
+    expect(row(first).dir).toBe(profile);
+    expect(row(first).steps).toEqual([
+      `installed ${shipped}`,
+      `linked ${all} skills in ${userSkillsAt(user)}`,
+      ...["config/skills", "config/plugins/t3-pstack", "config/agents"].map((p) => `linked ${join(profile, p)}`),
+    ]);
     expect(row(first).checks.every((c) => c.ok)).toBe(true);
+    expect(realpathSync(join(profile, "config/skills/poteto-mode/SKILL.md"))).toBe(join(canonicalAt(user), "skills/poteto-mode/SKILL.md"));
     expect(row(run("update")).steps).toEqual([]);
-    expect(row(run("doctor")).checks.map((c) => c.name)).toEqual(["installed", "enabled"]);
+    expect(row(run("doctor")).checks.map((c) => c.name)).toEqual(["installed", "linked", "enabled", "T3 skills list"]);
     expect(existsSync(join(profile, "t3-pstack-models.md"))).toBe(false);
   });
 });

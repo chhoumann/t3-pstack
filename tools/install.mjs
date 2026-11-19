@@ -21,8 +21,11 @@
 // where it is, so a release reaches the home only through this installer,
 // which trusts the hook again. A local
 // directory has no tag and stays unpinned. Claude Code homes still auto-update
-// from their marketplace's default branch. An Antigravity profile gets a copy
-// of the plugin this run installs, so it too changes only when `update` runs.
+// from their marketplace's default branch. Antigravity profiles share one copy
+// of the plugin this run installs, at ~/.gemini/t3-pstack, so it too changes
+// only when `update` runs. T3 lists an Antigravity thread's skills only from
+// ~/.gemini/config/skills, so each skill is linked there and each profile
+// links its plugin, skills, and agents to that copy.
 //
 //   npx -y github:chhoumann/t3-pstack <install|update|doctor>
 //     --source <owner/repo|git URL|dir>   marketplace source, default the repo npx ran, else chhoumann/t3-pstack
@@ -97,7 +100,7 @@ async function run(argv, env, home) {
   const facts = pluginFacts(source.local ?? packageRoot);
   const trusted = new Set([HOME_REPO, origin].map((repo) => parseSource(repo, home).key).concat(source.key));
   const hint = installHint(source);
-  const context = { source, trusted, hint, pluginRoot: facts.pluginRoot, version: facts.version, skills: facts.skills, codexHook: facts.codexHook };
+  const context = { source, trusted, hint, userHome: home, pluginRoot: facts.pluginRoot, version: facts.version, skills: facts.skills, codexHook: facts.codexHook };
   const { homes, settings } = discoverHomes({
     env,
     home,
