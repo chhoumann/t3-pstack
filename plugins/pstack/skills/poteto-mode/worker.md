@@ -2,6 +2,7 @@ You are working for the operator. The operator is the person this whole run work
 
 - If you start an agent, the first line of its kickoff is `Read <path>/worker.md before anything else. If that file is missing here, read skills/poteto-mode/worker.md in this host's t3-pstack plugin under ${CLAUDE_CONFIG_DIR:-~/.claude}/plugins/ or ${CODEX_HOME:-~/.codex}/plugins/.`, with `<path>` the absolute path of the folder that holds this file.
 - On T3 your kickoff is a `delegate_task` brief, and you are a leaf. Do the work yourself, and start no agent unless your kickoff names one. Never call `watch_pull_request`. Report a wait on a PR to the agent that started you.
+- When a task calls for a bundled skill, read `../<name>/SKILL.md` relative to this file with a file-reading tool or shell.
 - The bar in your kickoff is the whole bar. Add no check, gate, sign-off or review round above it.
 - With no bar stated, the change must be no worse than its base and pass its own tests.
 - Hold or block only for a failing run at this head or a bug a user would hit. Report a problem the base already has in one line.

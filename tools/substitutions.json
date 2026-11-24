@@ -206,14 +206,14 @@
     {
       "pattern": ", with `<path>` the absolute path of the folder that holds this file.",
       "files": "^skills/poteto-mode/worker\\.md$",
-      "replacement": ", with `<path>` the absolute path of the folder that holds this file.\n- On T3 your kickoff is a `delegate_task` brief, and you are a leaf. Do the work yourself, and start no agent unless your kickoff names one. Never call `watch_pull_request`. Report a wait on a PR to the agent that started you.",
-      "rationale": "Squares worker.md with poteto-mode's Dispatch on T3: a delegate_task child is a leaf unless its brief names its subagents, and a T3 child never watches a PR"
+      "replacement": ", with `<path>` the absolute path of the folder that holds this file.\n- On T3 your kickoff is a `delegate_task` brief, and you are a leaf. Do the work yourself, and start no agent unless your kickoff names one. Never call `watch_pull_request`. Report a wait on a PR to the agent that started you.\n- When a task calls for a bundled skill, read `../<name>/SKILL.md` relative to this file with a file-reading tool or shell.",
+      "rationale": "Squares worker.md with poteto-mode's Dispatch on T3: a delegate_task child is a leaf unless its brief names its subagents, and a T3 child never watches a PR. The loader rule reaches delegates that do not read poteto-mode."
     },
     {
       "pattern": "Bundled skills live at `../<name>/SKILL.md` from this file, so put this file's absolute path in every `poteto-agent` prompt.",
       "files": "^skills/poteto-mode/SKILL\\.md$",
-      "replacement": "Bundled skills live at `../<name>/SKILL.md` from this file, so put this file's absolute path in every `poteto-agent` prompt.\n\nOn Codex, read this file whole before acting, in a shell call of its own with `max_output_tokens: 10000`. A smaller output budget cuts lines out of its middle. If a read of it shows `tokens truncated`, read it again that way.",
-      "rationale": "Codex's model picks a shell read's output budget, often 3000 to 6000 tokens for a SKILL.md, and Codex 0.162.1 then cuts the middle of anything longer, which here is the Subagents section that holds the T3 dispatch rules. The head of a cut read survives, so the instruction sits there. tests/agent-skills.test.mjs keeps the file inside the 10000-token budget it names."
+      "replacement": "Bundled skills live at `../<name>/SKILL.md` from this file, so put this file's absolute path in every `poteto-agent` prompt.\n\nWhen a task calls for a bundled skill, read `../<name>/SKILL.md` relative to this file with a file-reading tool or shell.\n\nOn Codex, read this file whole before acting, in a shell call of its own with `max_output_tokens: 10000`. A smaller output budget cuts lines out of its middle. If a read of it shows `tokens truncated`, read it again that way.",
+      "rationale": "Codex's model picks a shell read's output budget, often 3000 to 6000 tokens for a SKILL.md, and Codex 0.162.1 then cuts the middle of anything longer, which here is the Subagents section that holds the T3 dispatch rules. The head of a cut read survives, so the instruction sits there. tests/agent-skills.test.mjs keeps the file inside the 10000-token budget it names. Claude Code rejects Skill calls for hidden leaves and tells the agent not to reproduce their workflow through other means, so the router must direct file reads before an invocation is attempted. Direct file reads preserve hidden-leaf routing across hosts."
     },
     {
       "pattern": "open its steps at `playbooks/<title>.md`, with the title in kebab case.",
